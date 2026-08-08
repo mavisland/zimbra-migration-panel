@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import csv
+import hashlib
 import io
 import json
 import os
@@ -79,7 +80,7 @@ def init_db() -> None:
         for stale_file in DATA.glob(pattern):
             stale_file.unlink(missing_ok=True)
     with db() as conn:
-        conn.execute("""UPDATE jobs SET status='interrupted', pid=NULL, finished_at=?,
+        conn.execute("""UPDATE jobs SET status='interrupted', pid=NULL, active_lock=NULL, finished_at=?,
             error='Uygulama yeniden başlatıldığı için aktarım kesildi'
             WHERE status IN ('starting','running','stopping')""", (now(),))
 
@@ -136,6 +137,9 @@ def add_job(payload: dict) -> int:
     required = ["source_host", "source_email", "source_password", "target_host", "target_email", "target_password"]
     if any(not str(payload.get(key, "")).strip() for key in required):
         raise ValueError("Zorunlu alanlar eksik")
+    lock_material = "\0".join(str(payload[key]).strip().lower() for key in
+                              ("source_host", "source_email", "target_host", "target_email"))
+    lock_key = hashlib.sha256(lock_material.encode()).hexdigest()
     values = {
         "source_host": str(payload["source_host"]).strip(),
         "source_port": int(payload.get("source_port", 993)),
@@ -149,16 +153,18 @@ def add_job(payload: dict) -> int:
         "target_password": CRYPT.encrypt(str(payload["target_password"]).encode()),
         "start_date": str(payload.get("start_date") or "").strip() or None,
         "end_date": str(payload.get("end_date") or "").strip() or None,
+        "lock_key": lock_key,
+        "active_lock": lock_key,
     }
     with db() as conn:
         cursor = conn.execute(
             """INSERT INTO jobs
             (source_host,source_port,source_security,source_email,source_password,
              target_host,target_port,target_security,target_email,target_password,
-             start_date,end_date,created_at)
+             start_date,end_date,lock_key,active_lock,created_at)
             VALUES (:source_host,:source_port,:source_security,:source_email,:source_password,
                     :target_host,:target_port,:target_security,:target_email,:target_password,
-                    :start_date,:end_date,:created_at)""",
+                    :start_date,:end_date,:lock_key,:active_lock,:created_at)""",
             values | {"created_at": now()},
         )
         return int(cursor.lastrowid)
@@ -192,7 +198,7 @@ class MigrationManager:
         if running_ids:
             placeholders = ",".join("?" for _ in running_ids)
             with db() as conn:
-                conn.execute(f"""UPDATE jobs SET status='interrupted', pid=NULL, finished_at=?,
+                conn.execute(f"""UPDATE jobs SET status='interrupted', pid=NULL, active_lock=NULL, finished_at=?,
                     error='Uygulama kapatıldığı için aktarım kesildi' WHERE id IN ({placeholders})""",
                     (now(), *running_ids))
         for process in list(self.running.values()):
@@ -278,16 +284,16 @@ class MigrationManager:
             with db() as conn:
                 current = conn.execute("SELECT status FROM jobs WHERE id=?", (job_id,)).fetchone()["status"]
                 if current == "stopping":
-                    conn.execute("UPDATE jobs SET status='stopped', finished_at=?, pid=NULL WHERE id=?", (now(), job_id))
+                    conn.execute("UPDATE jobs SET status='stopped', active_lock=NULL, finished_at=?, pid=NULL WHERE id=?", (now(), job_id))
                 elif current == "interrupted":
-                    conn.execute("UPDATE jobs SET finished_at=?, pid=NULL WHERE id=?", (now(), job_id))
+                    conn.execute("UPDATE jobs SET active_lock=NULL, finished_at=?, pid=NULL WHERE id=?", (now(), job_id))
                 elif code == 0:
-                    conn.execute("UPDATE jobs SET status='completed', progress=100, finished_at=?, pid=NULL WHERE id=?", (now(), job_id))
+                    conn.execute("UPDATE jobs SET status='completed', active_lock=NULL, progress=100, finished_at=?, pid=NULL WHERE id=?", (now(), job_id))
                 else:
-                    conn.execute("UPDATE jobs SET status='failed', error=?, finished_at=?, pid=NULL WHERE id=?", (f"imapsync çıkış kodu: {code}", now(), job_id))
+                    conn.execute("UPDATE jobs SET status='failed', active_lock=NULL, error=?, finished_at=?, pid=NULL WHERE id=?", (f"imapsync çıkış kodu: {code}", now(), job_id))
         except Exception as exc:
             with db() as conn:
-                conn.execute("UPDATE jobs SET status='failed', error=?, finished_at=?, pid=NULL WHERE id=?", (str(exc), now(), job_id))
+                conn.execute("UPDATE jobs SET status='failed', active_lock=NULL, error=?, finished_at=?, pid=NULL WHERE id=?", (str(exc), now(), job_id))
         finally:
             self.running.pop(job_id, None)
             for filename in passfiles:
@@ -324,7 +330,7 @@ class MigrationManager:
             if not row:
                 raise HTTPException(404, "Aktarım bulunamadı")
             if row["status"] in {"queued", "starting"}:
-                conn.execute("UPDATE jobs SET status='stopped', finished_at=? WHERE id=?", (now(), job_id))
+                conn.execute("UPDATE jobs SET status='stopped', active_lock=NULL, finished_at=? WHERE id=?", (now(), job_id))
                 return
             if row["status"] != "running" or not process:
                 raise HTTPException(409, "Aktarım durdurulabilir durumda değil")
@@ -400,6 +406,8 @@ def create_job(
     require_imapsync()
     try:
         job_id = add_job(locals())
+    except pymysql.err.IntegrityError as exc:
+        raise HTTPException(409, "Bu kaynak ve hedef hesap için zaten aktif bir aktarım var") from exc
     except (ValueError, TypeError) as exc:
         raise HTTPException(422, str(exc)) from exc
     manager.wakeup.set()
@@ -415,6 +423,8 @@ async def import_jobs(file: Annotated[UploadFile, File()]):
     for line, row in enumerate(reader, 2):
         try:
             ids.append(add_job(row))
+        except pymysql.err.IntegrityError:
+            errors.append({"line": line, "error": "Bu hesap için zaten aktif bir aktarım var"})
         except Exception as exc:
             errors.append({"line": line, "error": str(exc)})
     manager.wakeup.set()
@@ -435,7 +445,11 @@ def retry_job(job_id: int):
             raise HTTPException(404, "Aktarım bulunamadı")
         if row["status"] in {"running", "starting", "stopping"}:
             raise HTTPException(409, "Çalışan aktarım yeniden başlatılamaz")
-        conn.execute("UPDATE jobs SET status='queued',error=NULL,progress=0,started_at=NULL,finished_at=NULL WHERE id=?", (job_id,))
+        try:
+            conn.execute("""UPDATE jobs SET status='queued',active_lock=lock_key,error=NULL,
+                progress=0,started_at=NULL,finished_at=NULL WHERE id=?""", (job_id,))
+        except pymysql.err.IntegrityError as exc:
+            raise HTTPException(409, "Bu hesap için başka bir aktif aktarım var") from exc
     manager.wakeup.set()
     return {"ok": True}
 

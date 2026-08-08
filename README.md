@@ -47,6 +47,14 @@ Ardından uygulama şemasını bir defa içe aktarın. Uygulama kendi başına t
 mysql -u root -p zimbra_migration < migration_db.sql
 ```
 
+Mevcut bir kurulum yükseltiliyorsa yeni başlangıç şeması yeniden çalıştırılmaz. Sıralı migration dosyalarını bir kez uygulayın:
+
+```bash
+mysql -h 127.0.0.1 -u zimbra_migrator -p zimbra_migration < migrations/001_active_job_lock.sql
+```
+
+`active_lock` alanındaki benzersiz indeks, aynı kaynak ve hedef mailbox çiftinin aynı anda iki kez kuyruğa alınmasını engeller. Tamamlanan, durdurulan veya hatalı işlerde kilit kaldırılır; böylece hesap daha sonra yeniden çalıştırılabilir.
+
 `IMAPSYNC_PATH` değerini Ubuntu üzerindeki imapsync çalıştırılabilir dosyasına göre düzenleyin. Kurulumdan sonra yolu doğrulayın:
 
 ```bash
