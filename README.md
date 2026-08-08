@@ -6,6 +6,22 @@ Browser-based, MySQL-backed queue and monitoring panel for parallel `imapsync` m
 
 > This is an independent community project. It is not affiliated with or endorsed by Zimbra or the imapsync project.
 
+> ### Zimbra için profesyonel desteğe mi ihtiyacınız var?
+>
+> Zimbra kurulumu, sürüm yükseltme, posta taşıma, bakım, yedekleme, performans iyileştirme ve arıza giderme konularında planlama ve uygulama desteği sunabilirim.
+>
+> **[Destek talebi oluşturun →](https://github.com/mavisland/zimbra-migration-panel/issues/new?template=professional-support.yml)**
+>
+> Talebinizde parola, özel anahtar veya sunucu erişim bilgisi paylaşmayın. İlk görüşmeden sonra hassas bilgiler için güvenli bir iletişim yöntemi belirlenir.
+
+> ### Need professional Zimbra support?
+>
+> I can help plan and deliver Zimbra installation, upgrades, mail migration, maintenance, backup, performance tuning, and incident troubleshooting.
+>
+> **[Request support →](https://github.com/mavisland/zimbra-migration-panel/issues/new?template=professional-support.yml)**
+>
+> Do not include passwords, private keys, or server credentials in a public request. A secure communication method can be agreed upon after initial contact.
+
 ## Türkçe
 
 ### Başlamadan önce

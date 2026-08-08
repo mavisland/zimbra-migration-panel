@@ -1,0 +1,58 @@
+name: Profesyonel destek / Professional support
+description: Zimbra kurulumu, taşıma, bakım veya sorun giderme için iletişime geçin.
+title: "[Destek] "
+labels:
+  - support
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Zimbra kurulumu, yükseltme, posta taşıma, bakım ve sorun giderme talepleri için bu formu kullanabilirsiniz.
+
+        Use this form for Zimbra installation, upgrades, mail migration, maintenance, and troubleshooting requests.
+
+        **Parola, özel anahtar, erişim anahtarı veya sunucu kimlik bilgisi paylaşmayın. / Never post passwords, private keys, access tokens, or server credentials.**
+  - type: dropdown
+    id: service
+    attributes:
+      label: Hizmet / Service
+      options:
+        - Zimbra kurulumu / Zimbra installation
+        - Sürüm yükseltme / Version upgrade
+        - Posta taşıma / Mail migration
+        - Bakım ve performans / Maintenance and performance
+        - Yedekleme ve geri yükleme / Backup and recovery
+        - Arıza giderme / Troubleshooting
+        - Diğer / Other
+    validations:
+      required: true
+  - type: input
+    id: organization
+    attributes:
+      label: Kurum veya proje / Organization or project
+      description: İsterseniz genel bir ad kullanabilirsiniz. / You may use a generic name.
+  - type: textarea
+    id: summary
+    attributes:
+      label: İhtiyaç özeti / Request summary
+      description: Hesap sayısı, mevcut durum, hedef ve zaman planını hassas bilgi vermeden açıklayın.
+      placeholder: Yaklaşık hesap sayısı, mevcut sürüm, hedef, planlanan tarih…
+    validations:
+      required: true
+  - type: dropdown
+    id: urgency
+    attributes:
+      label: Öncelik / Priority
+      options:
+        - Planlı çalışma / Planned work
+        - Yakın zamanda gerekli / Needed soon
+        - Çalışan sistemi etkileyen arıza / Production incident
+    validations:
+      required: true
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Güvenlik onayı / Security confirmation
+      options:
+        - label: Bu talepte parola, anahtar veya erişim bilgisi paylaşmadım. / I have not included passwords, keys, or credentials.
+          required: true
