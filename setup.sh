@@ -22,7 +22,7 @@ fi
 source "$SOURCE_DIR/scripts/locales/setup.${LANGUAGE_CODE}.sh"
 
 valid_username() {
-  printf '%s\n' "$1" | LC_ALL=C grep -Eq '^[A-Za-z0-9._-]+$'
+  printf '%s\n' "$1" | LC_ALL=C grep -Eq '^[A-Za-z0-9]+$'
 }
 
 if [[ ${1:-} == "--print-language" ]]; then

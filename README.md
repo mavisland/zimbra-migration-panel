@@ -55,7 +55,7 @@ cd zimbra-migration-panel
 sudo bash setup.sh
 ```
 
-`sudo` sizden Ubuntu kullanıcı parolanızı isteyebilir. Kurulum daha sonra panel için bir kullanıcı adı ve parola sorar. Kullanıcı adını boş bırakırsanız `admin` kullanılır. Panel parolası Ubuntu parolasından farklıdır, en az 12 karakter olmalıdır ve tarayıcıda oturum açmak için kullanılır. Parola yazılırken ekranda karakter görünmemesi normaldir. Boş, kısa veya eşleşmeyen değer girilirse kurulum kapanmadan yeniden sorar.
+`sudo` sizden Ubuntu kullanıcı parolanızı isteyebilir. Kurulum daha sonra panel için bir kullanıcı adı ve parola sorar. Kullanıcı adını boş bırakırsanız `admin` kullanılır; kullanıcı adı yalnızca ASCII harf ve rakam içerebilir, özel karakter kullanılamaz. Panel parolası Ubuntu parolasından farklıdır, en az 12 karakter olmalıdır ve tarayıcıda oturum açmak için kullanılır. Parola yazılırken ekranda karakter görünmemesi normaldir. Boş, kısa veya eşleşmeyen değer girilirse kurulum kapanmadan yeniden sorar.
 
 `setup.sh` ilk kurulumun tamamını yürütür:
 
@@ -197,7 +197,7 @@ cd zimbra-migration-panel
 sudo bash setup.sh
 ```
 
-`sudo` may ask for your Ubuntu account password. The installer then asks for a panel username and password. Leaving the username empty selects `admin`. The panel password is separate from the Ubuntu password, must be at least 12 characters long, and is used to sign in through the browser. It is normal for no characters to appear while typing a password. Empty, short, or mismatched values are requested again without terminating setup.
+`sudo` may ask for your Ubuntu account password. The installer then asks for a panel username and password. Leaving the username empty selects `admin`; usernames may contain only ASCII letters and numbers, with no special characters. The panel password is separate from the Ubuntu password, must be at least 12 characters long, and is used to sign in through the browser. It is normal for no characters to appear while typing a password. Empty, short, or mismatched values are requested again without terminating setup.
 
 `setup.sh` performs the complete first-time installation:
 
