@@ -59,7 +59,8 @@ sudo bash setup.sh
 
 `setup.sh` ilk kurulumun tamamını yürütür:
 
-- Python 3.10+ ile `venv`/`pip` bileşenlerini denetler. Python eksik veya eskiyse otomatik kurulum yapmadan, sistem dili Türkçeyse Türkçe; diğer dillerde İngilizce örnek Ubuntu komutunu gösterip durur.
+- Kurulum boyunca sistem dili Türkçeyse Türkçe, diğer dillerde İngilizce mesajlar gösterir.
+- Ubuntu 20.04'ün varsayılan Python 3.8 sürümü dahil Python 3.8+ ile `venv`/`pip` bileşenlerini denetler. Python eksik veya eskiyse otomatik kurulum yapmadan örnek Ubuntu komutunu gösterip durur.
 - imapsync ve bağımsız MySQL/MariaDB bileşenlerini denetler; eksikleri kurar.
 - `/opt/zimbra-migration` dizini ile kısıtlı `zimbra-migrator` servis kullanıcısını oluşturur.
 - `zimbra_migration` veritabanını ve yalnızca bu veritabanında CRUD yetkili kullanıcıyı oluşturur.
@@ -200,7 +201,8 @@ sudo bash setup.sh
 
 `setup.sh` performs the complete first-time installation:
 
-- Checks for Python 3.10+ and the `venv`/`pip` components. If Python is missing or outdated, it does not install Python automatically; it stops and prints an example Ubuntu command in Turkish when the system locale is Turkish, or in English otherwise.
+- Displays Turkish messages throughout installation when the system locale is Turkish, and English messages for every other locale.
+- Supports Ubuntu 20.04's default Python 3.8 and checks for Python 3.8+ with the `venv`/`pip` components. If Python is missing or outdated, it does not install Python automatically; it stops and prints an example Ubuntu command.
 - Checks imapsync and the independent MySQL/MariaDB service, installing missing components.
 - Creates `/opt/zimbra-migration` and the restricted `zimbra-migrator` service account.
 - Creates the `zimbra_migration` database and a user limited to CRUD access on that database.

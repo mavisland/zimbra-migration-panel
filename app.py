@@ -16,7 +16,9 @@ import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Annotated
+from typing import Optional
+
+from typing_extensions import Annotated
 
 import uvicorn
 import pymysql
@@ -242,7 +244,7 @@ def add_job(payload: dict) -> int:
             VALUES (:source_host,:source_port,:source_security,:source_email,:source_password,
                     :target_host,:target_port,:target_security,:target_email,:target_password,
                     :start_date,:end_date,:lock_key,:active_lock,:created_at)""",
-            values | {"created_at": now()},
+            dict(values, created_at=now()),
         )
         return int(cursor.lastrowid)
 
@@ -290,7 +292,7 @@ class MigrationManager:
         self.wakeup = asyncio.Event()
         self.running: dict[int, asyncio.subprocess.Process] = {}
         self.tasks: set[asyncio.Task] = set()
-        self.loop_task: asyncio.Task | None = None
+        self.loop_task: Optional[asyncio.Task] = None
         self.paused = False
         self.last_housekeeping = 0.0
 
@@ -602,7 +604,9 @@ def summary():
             SUM(CASE WHEN status='completed' THEN 1 ELSE 0 END) completed,
             SUM(CASE WHEN status IN ('failed','interrupted') THEN 1 ELSE 0 END) failed
             FROM jobs""").fetchone()
-    return dict(row) | {"max_parallel": MAX_PARALLEL, "paused": manager.paused}
+    result = dict(row)
+    result.update(max_parallel=MAX_PARALLEL, paused=manager.paused)
+    return result
 
 
 @app.post("/api/control/pause")
