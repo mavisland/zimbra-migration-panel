@@ -6,6 +6,7 @@ import io
 import json
 import os
 import re
+import shutil
 import subprocess
 import tempfile
 from contextlib import asynccontextmanager
@@ -89,6 +90,34 @@ def cipher() -> Fernet:
 CRYPT = cipher()
 
 
+def imapsync_status() -> dict:
+    executable = shutil.which(IMAPSYNC_PATH) if not Path(IMAPSYNC_PATH).is_file() else str(Path(IMAPSYNC_PATH).resolve())
+    if not executable:
+        return {"available": False, "path": IMAPSYNC_PATH, "version": None,
+                "error": "imapsync bulunamadı. Ubuntu kurulum adımlarını tamamlayın."}
+    try:
+        result = subprocess.run([executable, "--version"], capture_output=True, text=True,
+                                timeout=10, creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
+        output = (result.stdout or result.stderr).strip().splitlines()
+        if result.returncode != 0:
+            return {"available": False, "path": executable, "version": None,
+                    "error": output[-1] if output else f"imapsync çıkış kodu: {result.returncode}"}
+        return {"available": True, "path": executable,
+                "version": output[-1] if output else "Sürüm bilgisi alınamadı", "error": None}
+    except (OSError, subprocess.SubprocessError) as exc:
+        return {"available": False, "path": executable, "version": None, "error": str(exc)}
+
+
+def imapsync_exists() -> bool:
+    return Path(IMAPSYNC_PATH).is_file() or shutil.which(IMAPSYNC_PATH) is not None
+
+
+def require_imapsync() -> None:
+    status = imapsync_status()
+    if not status["available"]:
+        raise HTTPException(503, status["error"])
+
+
 def clean_security(value: str) -> str:
     value = value.strip().lower()
     if value not in {"ssl", "tls", "none"}:
@@ -158,7 +187,7 @@ class MigrationManager:
     async def scheduler(self) -> None:
         while not self.stop_event.is_set():
             capacity = MAX_PARALLEL - len(self.running)
-            if capacity > 0 and not self.paused:
+            if capacity > 0 and not self.paused and imapsync_exists():
                 with db() as conn:
                     rows = conn.execute("SELECT * FROM jobs WHERE status='queued' ORDER BY id LIMIT ?", (capacity,)).fetchall()
                     for row in rows:
@@ -342,6 +371,7 @@ def create_job(
     target_email: Annotated[str, Form()] = "", target_password: Annotated[str, Form()] = "",
     start_date: Annotated[str, Form()] = "", end_date: Annotated[str, Form()] = "",
 ):
+    require_imapsync()
     try:
         job_id = add_job(locals())
     except (ValueError, TypeError) as exc:
@@ -352,6 +382,7 @@ def create_job(
 
 @app.post("/api/jobs/import")
 async def import_jobs(file: Annotated[UploadFile, File()]):
+    require_imapsync()
     content = (await file.read()).decode("utf-8-sig")
     reader = csv.DictReader(io.StringIO(content))
     ids, errors = [], []
@@ -399,6 +430,11 @@ async def events():
             yield f"data: {json.dumps({'updated_at': now().isoformat()})}\n\n"
             await asyncio.sleep(2)
     return StreamingResponse(stream(), media_type="text/event-stream")
+
+
+@app.get("/api/system")
+def system_status():
+    return {"imapsync": imapsync_status(), "max_parallel": MAX_PARALLEL}
 
 
 if __name__ == "__main__":

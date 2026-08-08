@@ -11,6 +11,18 @@ sudo apt update
 sudo apt install -y python3 python3-venv python3-pip default-mysql-client
 ```
 
+### imapsync kurulumu (zorunlu)
+
+Dashboard yalnızca yönetim katmanıdır; gerçek aktarımı imapsync yapar. Bu nedenle imapsync olmadan yeni aktarım eklenemez. Projedeki Ubuntu kurulum betiğini çalıştırın:
+
+```bash
+sudo bash scripts/install-imapsync-ubuntu.sh
+command -v imapsync
+imapsync --version
+```
+
+Betik, imapsync'in resmi Ubuntu kurulum belgesindeki Perl bağımlılıklarını yükler ve imapsync betiğini resmi GitHub kopyasından `/usr/local/bin/imapsync` yoluna kurar. Üretim kurulumundan önce betiği ve indirilen kaynağı kendi güvenlik politikanıza göre inceleyin.
+
 Proje klasöründe Python ortamını hazırlayın:
 
 ```bash
@@ -118,7 +130,7 @@ Test sırasında şunları doğrulayın:
 - Tamamlanan hesabın `Biten Hesaplar` grubuna taşındığını,
 - Aynı hesabı yeniden çalıştırdığınızda iletilerin çoğaltılmadığını.
 
-Arayüzü yalnızca görsel olarak test etmek için imapsync kurulumu gerekmez; fakat bir aktarım başlatırsanız çalıştırılabilir dosya bulunamadığı için iş `Hatalı` durumuna geçer.
+Arayüz imapsync bulunamadığında üst bölümde kırmızı bir sistem uyarısı gösterir ve yeni aktarım eklemeyi engeller. Mevcut bekleyen işler de imapsync kurulana kadar başlatılmaz.
 
 ## CSV biçimi
 
