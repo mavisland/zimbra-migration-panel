@@ -21,7 +21,7 @@ jobs:
       - name: Validate Python and tests
         run: |
           python -m py_compile app.py scripts/hash-password.py
-          pytest -q
+          python -m pytest -q
       - name: Validate shell scripts
         run: bash -n setup.sh scripts/install-imapsync-ubuntu.sh
       - name: Validate browser JavaScript

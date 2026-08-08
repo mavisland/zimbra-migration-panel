@@ -139,7 +139,7 @@ Kuyruk yöneticisi uygulama içinde çalıştığından yalnızca tek Uvicorn wo
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements-dev.txt
-pytest -q
+python -m pytest -q
 ```
 
 GitHub Actions her push ve pull request'te Python testlerini, JavaScript sözdizimini ve Ubuntu kurulum betiklerini doğrular.
@@ -279,7 +279,7 @@ Run exactly one Uvicorn worker because the queue manager lives inside the applic
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements-dev.txt
-pytest -q
+python -m pytest -q
 ```
 
 GitHub Actions validates the Python tests, JavaScript syntax, and Ubuntu installation scripts on every push and pull request.
