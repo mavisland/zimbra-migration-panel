@@ -1,0 +1,37 @@
+-- Zimbra IMAP Aktarım Paneli - MySQL 8+ başlangıç şeması
+-- Önce hedef veritabanını seçin: USE zimbra_migration;
+
+CREATE TABLE IF NOT EXISTS jobs (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    source_host VARCHAR(255) NOT NULL,
+    source_port INT UNSIGNED NOT NULL DEFAULT 993,
+    source_security VARCHAR(16) NOT NULL DEFAULT 'ssl',
+    source_email VARCHAR(320) NOT NULL,
+    source_password VARBINARY(2048) NOT NULL COMMENT 'Fernet ile şifrelenmiş kaynak parolası',
+    target_host VARCHAR(255) NOT NULL,
+    target_port INT UNSIGNED NOT NULL DEFAULT 993,
+    target_security VARCHAR(16) NOT NULL DEFAULT 'ssl',
+    target_email VARCHAR(320) NOT NULL,
+    target_password VARBINARY(2048) NOT NULL COMMENT 'Fernet ile şifrelenmiş hedef parolası',
+    start_date DATE NULL,
+    end_date DATE NULL,
+    status VARCHAR(32) NOT NULL DEFAULT 'queued',
+    discovered BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    transferred BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    skipped BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    bytes_transferred BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    progress TINYINT UNSIGNED NOT NULL DEFAULT 0,
+    error TEXT NULL,
+    log_path TEXT NULL,
+    pid BIGINT UNSIGNED NULL,
+    created_at DATETIME(6) NOT NULL,
+    started_at DATETIME(6) NULL,
+    finished_at DATETIME(6) NULL,
+    PRIMARY KEY (id),
+    INDEX jobs_status_idx (status, id),
+    INDEX jobs_target_email_idx (target_email),
+    CONSTRAINT jobs_progress_chk CHECK (progress BETWEEN 0 AND 100),
+    CONSTRAINT jobs_security1_chk CHECK (source_security IN ('ssl', 'tls', 'none')),
+    CONSTRAINT jobs_security2_chk CHECK (target_security IN ('ssl', 'tls', 'none')),
+    CONSTRAINT jobs_dates_chk CHECK (end_date IS NULL OR start_date IS NULL OR end_date >= start_date)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

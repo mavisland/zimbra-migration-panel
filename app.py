@@ -73,29 +73,6 @@ def db() -> Database:
 
 def init_db() -> None:
     with db() as conn:
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS jobs (
-                id BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT,
-                source_host VARCHAR(255) NOT NULL, source_port INT NOT NULL,
-                source_security VARCHAR(16) NOT NULL, source_email VARCHAR(320) NOT NULL,
-                source_password VARBINARY(2048) NOT NULL,
-                target_host VARCHAR(255) NOT NULL, target_port INT NOT NULL,
-                target_security VARCHAR(16) NOT NULL, target_email VARCHAR(320) NOT NULL,
-                target_password VARBINARY(2048) NOT NULL,
-                start_date DATE NULL, end_date DATE NULL,
-                status VARCHAR(32) NOT NULL DEFAULT 'queued',
-                discovered BIGINT UNSIGNED NOT NULL DEFAULT 0,
-                transferred BIGINT UNSIGNED NOT NULL DEFAULT 0,
-                skipped BIGINT UNSIGNED NOT NULL DEFAULT 0,
-                bytes_transferred BIGINT UNSIGNED NOT NULL DEFAULT 0,
-                progress TINYINT UNSIGNED NOT NULL DEFAULT 0,
-                error TEXT NULL, log_path TEXT NULL, pid BIGINT NULL,
-                created_at DATETIME(6) NOT NULL, started_at DATETIME(6) NULL, finished_at DATETIME(6) NULL,
-                INDEX jobs_status_idx (status, id)
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-            """
-        )
         conn.execute("UPDATE jobs SET status='interrupted', error='Uygulama yeniden başlatıldı' WHERE status='running'")
 
 
@@ -165,6 +142,7 @@ class MigrationManager:
         self.running: dict[int, asyncio.subprocess.Process] = {}
         self.tasks: set[asyncio.Task] = set()
         self.loop_task: asyncio.Task | None = None
+        self.paused = False
 
     async def start(self) -> None:
         self.loop_task = asyncio.create_task(self.scheduler())
@@ -180,7 +158,7 @@ class MigrationManager:
     async def scheduler(self) -> None:
         while not self.stop_event.is_set():
             capacity = MAX_PARALLEL - len(self.running)
-            if capacity > 0:
+            if capacity > 0 and not self.paused:
                 with db() as conn:
                     rows = conn.execute("SELECT * FROM jobs WHERE status='queued' ORDER BY id LIMIT ?", (capacity,)).fetchall()
                     for row in rows:
@@ -331,9 +309,28 @@ def summary():
     with db() as conn:
         row = conn.execute("""SELECT COALESCE(SUM(discovered),0) discovered,
             COALESCE(SUM(transferred),0) transferred, COALESCE(SUM(skipped),0) skipped,
+            COUNT(*) total,
             SUM(CASE WHEN status='running' THEN 1 ELSE 0 END) running,
-            SUM(CASE WHEN status='queued' THEN 1 ELSE 0 END) queued FROM jobs""").fetchone()
-    return dict(row) | {"max_parallel": MAX_PARALLEL}
+            SUM(CASE WHEN status='queued' THEN 1 ELSE 0 END) queued,
+            SUM(CASE WHEN status='completed' THEN 1 ELSE 0 END) completed,
+            SUM(CASE WHEN status IN ('failed','interrupted') THEN 1 ELSE 0 END) failed
+            FROM jobs""").fetchone()
+    return dict(row) | {"max_parallel": MAX_PARALLEL, "paused": manager.paused}
+
+
+@app.post("/api/control/pause")
+def toggle_pause():
+    manager.paused = not manager.paused
+    manager.wakeup.set()
+    return {"paused": manager.paused}
+
+
+@app.delete("/api/jobs/queue")
+def clear_queue():
+    with db() as conn:
+        cursor = conn.execute("DELETE FROM jobs WHERE status='queued'")
+        deleted = cursor.rowcount
+    return {"deleted": deleted}
 
 
 @app.post("/api/jobs")
