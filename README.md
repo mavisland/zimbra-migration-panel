@@ -133,6 +133,17 @@ CSV UTF-8 olmalıdır. Varsayılan sınırlar 5 MiB ve 5.000 hesaptır. Tarihler
 
 Kuyruk yöneticisi uygulama içinde çalıştığından yalnızca tek Uvicorn worker kullanın. Güncelleme sırasında `setup.sh` veya `migration_db.sql` dosyasını canlı sisteme yeniden uygulamayın; sürüme ait güncelleme notlarını izleyin.
 
+### Geliştirici testleri
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements-dev.txt
+pytest -q
+```
+
+GitHub Actions her push ve pull request'te Python testlerini, JavaScript sözdizimini ve Ubuntu kurulum betiklerini doğrular.
+
 ---
 
 ## English
@@ -261,6 +272,17 @@ For the first attempt, use two test mailboxes rather than real users. Open the *
 - Queue pause state survives service restarts. A password-free CSV report is available from the sidebar. The dashboard shows the latest 500 jobs while the report contains every job.
 
 Run exactly one Uvicorn worker because the queue manager lives inside the application process. Do not re-run `setup.sh` or import `migration_db.sql` into a live installation during updates; follow the release-specific upgrade notes.
+
+### Developer tests
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements-dev.txt
+pytest -q
+```
+
+GitHub Actions validates the Python tests, JavaScript syntax, and Ubuntu installation scripts on every push and pull request.
 
 ## License
 
