@@ -68,7 +68,7 @@ sudo bash setup.sh
 - Panel kullanıcı adı/parolasını alır; uygulama sırlarını ve `.env` dosyasını üretir.
 - systemd servisini etkinleştirip başlatır.
 
-Betik yalnızca ilk kurulum içindir. `/opt/zimbra-migration/.env` zaten varsa veri kaybını önlemek için durur.
+`setup.sh` güvenle tekrar çalıştırılabilir. Mevcut kurulum algılandığında `.env`, şifreleme anahtarı, veritabanı, hesap parolaları ve iş kayıtları korunur; uygulama dosyaları, Python bağımlılıkları ve systemd servisi güncellenir. Yarım kalan ilk kurulumda mevcut veritabanı ve kullanıcı yeniden kullanılarak eksik adımlar tamamlanır.
 
 #### Neden Zimbra'nın MySQL/MariaDB hizmeti kullanılmıyor?
 
@@ -135,7 +135,7 @@ CSV UTF-8 olmalıdır. Varsayılan sınırlar 5 MiB ve 5.000 hesaptır. Tarihler
 - **imapsync bulunamadı:** `sudo bash scripts/install-imapsync-ubuntu.sh` çalıştırıp servisi `sudo systemctl restart zimbra-migration` ile yeniden başlatın.
 - **Bağlantı testi başarısız:** IMAP sunucu adı, 993 portu, SSL seçimi, posta adresi ve parolayı kontrol edin. Kaynak sunucunun uzak IMAP erişimine izin verdiğinden emin olun.
 - **Sertifika hatası:** Doğru alan adını kullanın ve sunucunun geçerli sertifika zincirini düzeltin. TLS doğrulamasını kapatmak yalnızca geçici tanılama için düşünülmelidir.
-- **Kurulumu tekrar çalıştırmak istiyorum:** Çalışan sistemde `setup.sh` dosyasını tekrar çalıştırmayın; `.env`, `data/secret.key` ve MySQL veritabanını yedeklemeden dosya silmeyin.
+- **Kurulumu tekrar çalıştırmak istiyorum:** Çalışan sistemde `setup.sh` dosyasını yeniden çalıştırabilirsiniz. Betik mevcut yapılandırmayı ve verileri korur; önemli bir güncelleme öncesinde `.env`, `data/secret.key` ve MySQL veritabanını yedeklemeniz yine önerilir.
 
 ### Çalışma biçimi
 
@@ -149,7 +149,7 @@ CSV UTF-8 olmalıdır. Varsayılan sınırlar 5 MiB ve 5.000 hesaptır. Tarihler
 - `migration_db.sql` temiz kurulum için gereken bütün tabloları içeren tek şema dosyasıdır.
 - Kuyruğu duraklatma seçimi servis yeniden başlatıldığında korunur; parola içermeyen CSV raporu sol menüden indirilebilir. Dashboard son 500 işi gösterir, rapor bütün işleri içerir.
 
-Kuyruk yöneticisi uygulama içinde çalıştığından yalnızca tek Uvicorn worker kullanın. Güncelleme sırasında `setup.sh` veya `migration_db.sql` dosyasını canlı sisteme yeniden uygulamayın; sürüme ait güncelleme notlarını izleyin.
+Kuyruk yöneticisi uygulama içinde çalıştığından yalnızca tek Uvicorn worker kullanın. Güncelleme için yeni kodu aldıktan sonra `setup.sh` yeniden çalıştırılabilir; `migration_db.sql` dosyasını ise canlı veritabanına elle içe aktarmayın.
 
 ### Geliştirici testleri
 
@@ -210,7 +210,7 @@ sudo bash setup.sh
 - Prompts for the panel username/password and generates application secrets and `.env`.
 - Enables and starts the systemd service.
 
-The script is intended for first installation only. It stops if `/opt/zimbra-migration/.env` already exists to protect existing data.
+`setup.sh` is safe to run again. When it detects an existing installation, it preserves `.env`, the encryption key, database, account credentials, and job records while refreshing application files, Python dependencies, and the systemd service. After a partial first installation, it reuses the existing database and user and completes the remaining steps.
 
 #### Why not use Zimbra's MySQL/MariaDB service?
 
@@ -277,7 +277,7 @@ For the first attempt, use two test mailboxes rather than real users. Open the *
 - **imapsync is missing:** Run `sudo bash scripts/install-imapsync-ubuntu.sh`, then `sudo systemctl restart zimbra-migration`.
 - **Connection test fails:** Verify the IMAP hostname, port 993, SSL selection, email address, and password. Confirm that the source server permits remote IMAP access.
 - **Certificate error:** Use the correct hostname and repair the server's certificate chain. Disabling TLS verification should only be considered for temporary diagnosis.
-- **I want to run installation again:** Do not re-run `setup.sh` on a working system, and do not remove files before backing up `.env`, `data/secret.key`, and the MySQL database.
+- **I want to run installation again:** You may run `setup.sh` again on a working system. It preserves existing configuration and data; backing up `.env`, `data/secret.key`, and the MySQL database before an important update is still recommended.
 
 ### Runtime behavior
 
@@ -291,7 +291,7 @@ For the first attempt, use two test mailboxes rather than real users. Open the *
 - `migration_db.sql` is the only schema file required for a clean installation.
 - Queue pause state survives service restarts. A password-free CSV report is available from the sidebar. The dashboard shows the latest 500 jobs while the report contains every job.
 
-Run exactly one Uvicorn worker because the queue manager lives inside the application process. Do not re-run `setup.sh` or import `migration_db.sql` into a live installation during updates; follow the release-specific upgrade notes.
+Run exactly one Uvicorn worker because the queue manager lives inside the application process. After pulling updated code, `setup.sh` may be run again; do not manually import `migration_db.sql` into a live database.
 
 ### Developer tests
 

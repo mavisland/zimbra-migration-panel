@@ -15,3 +15,8 @@ printf "LANG='tr_TR.UTF-8'\n" > "$LOCALE_FIXTURE"
 [[ $(SYSTEM_LOCALE_FILE="$LOCALE_FIXTURE" bash "$ROOT/setup.sh" --print-language) == "tr" ]]
 
 echo "Setup locale detection tests passed."
+
+grep -q 'CREATE DATABASE IF NOT EXISTS' "$ROOT/setup.sh"
+grep -q 'CREATE USER IF NOT EXISTS' "$ROOT/setup.sh"
+grep -q 'HAS_EXISTING_CONFIG' "$ROOT/setup.sh"
+echo "Setup repeatability guards are present."

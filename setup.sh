@@ -49,9 +49,10 @@ if [[ ${EUID} -ne 0 ]]; then
   exit 1
 fi
 
+HAS_EXISTING_CONFIG=false
 if [[ -f "$APP_DIR/.env" ]]; then
-  printf "$MSG_EXISTING_INSTALLATION\n" "$APP_DIR" >&2
-  exit 1
+  HAS_EXISTING_CONFIG=true
+  printf "$MSG_EXISTING_INSTALLATION\n" "$APP_DIR"
 fi
 
 echo "$MSG_STEP_REQUIREMENTS"
@@ -65,7 +66,9 @@ fi
 
 # Never touch Zimbra's embedded database under /opt/zimbra. Reuse an independent
 # system MySQL/MariaDB service when available; otherwise install a local service.
-if command -v mysql >/dev/null 2>&1 && mysql --protocol=socket -uroot -e "SELECT 1" >/dev/null 2>&1; then
+if [[ "$HAS_EXISTING_CONFIG" == true ]]; then
+  echo "$MSG_MYSQL_CONFIG_REUSE"
+elif command -v mysql >/dev/null 2>&1 && mysql --protocol=socket -uroot -e "SELECT 1" >/dev/null 2>&1; then
   echo "$MSG_MYSQL_REUSE"
 else
   NEEDED_PACKAGES+=(default-mysql-server default-mysql-client)
@@ -96,39 +99,49 @@ python3 -m venv "$APP_DIR/.venv"
 "$APP_DIR/.venv/bin/pip" install -r "$APP_DIR/requirements.txt"
 
 echo "$MSG_STEP_DATABASE"
-if systemctl list-unit-files mysql.service >/dev/null 2>&1; then
-  systemctl enable --now mysql
-elif systemctl list-unit-files mariadb.service >/dev/null 2>&1; then
-  systemctl enable --now mariadb
-fi
-if ! mysql --protocol=socket -uroot -e "SELECT 1" >/dev/null 2>&1; then
-  echo "$MSG_MYSQL_ACCESS_ERROR" >&2
-  echo "$MSG_ZIMBRA_DB_UNUSED" >&2
-  exit 1
-fi
-DB_PASSWORD=$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')
-mysql --protocol=socket -uroot <<SQL
-CREATE DATABASE ${DB_NAME} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-CREATE USER '${DB_USER}'@'127.0.0.1' IDENTIFIED BY '${DB_PASSWORD}';
+if [[ "$HAS_EXISTING_CONFIG" == true ]]; then
+  echo "$MSG_DATABASE_PRESERVED"
+else
+  if systemctl list-unit-files mysql.service >/dev/null 2>&1; then
+    systemctl enable --now mysql
+  elif systemctl list-unit-files mariadb.service >/dev/null 2>&1; then
+    systemctl enable --now mariadb
+  fi
+  if ! mysql --protocol=socket -uroot -e "SELECT 1" >/dev/null 2>&1; then
+    echo "$MSG_MYSQL_ACCESS_ERROR" >&2
+    echo "$MSG_ZIMBRA_DB_UNUSED" >&2
+    exit 1
+  fi
+  DB_PASSWORD=$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')
+  mysql --protocol=socket -uroot <<SQL
+CREATE DATABASE IF NOT EXISTS ${DB_NAME} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER IF NOT EXISTS '${DB_USER}'@'127.0.0.1' IDENTIFIED BY '${DB_PASSWORD}';
+ALTER USER '${DB_USER}'@'127.0.0.1' IDENTIFIED BY '${DB_PASSWORD}';
 GRANT SELECT, INSERT, UPDATE, DELETE ON ${DB_NAME}.* TO '${DB_USER}'@'127.0.0.1';
 FLUSH PRIVILEGES;
 SQL
-mysql --protocol=socket -uroot "$DB_NAME" < "$APP_DIR/migration_db.sql"
+  mysql --protocol=socket -uroot "$DB_NAME" < "$APP_DIR/migration_db.sql"
+fi
 
 echo "$MSG_STEP_CREDENTIALS"
-read -r -p "$MSG_USERNAME_PROMPT" PANEL_USER
-PANEL_USER=${PANEL_USER:-admin}
-if [[ ! "$PANEL_USER" =~ ^[A-Za-z0-9._-]+$ ]]; then
-  echo "$MSG_USERNAME_INVALID" >&2
-  exit 1
-fi
-PANEL_HASH=$(INSTALL_LANGUAGE="$LANGUAGE_CODE" "$APP_DIR/.venv/bin/python" "$APP_DIR/scripts/hash-password.py")
-SESSION_SECRET=$(python3 -c 'import secrets; print(secrets.token_urlsafe(48))')
 SERVER_NAME=$(hostname -f 2>/dev/null || hostname)
 SERVER_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
 IMAPSYNC_PATH=$(command -v imapsync)
 
-cat > "$APP_DIR/.env" <<ENV
+if [[ "$HAS_EXISTING_CONFIG" == true ]]; then
+  echo "$MSG_CREDENTIALS_PRESERVED"
+  PANEL_USER=$(sed -n 's/^APP_USERNAME=//p' "$APP_DIR/.env" | head -n 1 | tr -d "\"'")
+else
+  read -r -p "$MSG_USERNAME_PROMPT" PANEL_USER
+  PANEL_USER=${PANEL_USER:-admin}
+  if [[ ! "$PANEL_USER" =~ ^[A-Za-z0-9._-]+$ ]]; then
+    echo "$MSG_USERNAME_INVALID" >&2
+    exit 1
+  fi
+  PANEL_HASH=$(INSTALL_LANGUAGE="$LANGUAGE_CODE" "$APP_DIR/.venv/bin/python" "$APP_DIR/scripts/hash-password.py")
+  SESSION_SECRET=$(python3 -c 'import secrets; print(secrets.token_urlsafe(48))')
+
+  cat > "$APP_DIR/.env" <<ENV
 IMAPSYNC_PATH=${IMAPSYNC_PATH}
 MAX_PARALLEL=3
 CSV_MAX_BYTES=5242880
@@ -150,6 +163,7 @@ MYSQL_DATABASE=${DB_NAME}
 MYSQL_USER=${DB_USER}
 MYSQL_PASSWORD='${DB_PASSWORD}'
 ENV
+fi
 
 echo "$MSG_STEP_PERMISSIONS"
 chown -R root:root "$APP_DIR"
