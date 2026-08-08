@@ -187,7 +187,8 @@ cp "$APP_DIR/deploy/zimbra-migration.service" /etc/systemd/system/zimbra-migrati
 
 echo "$MSG_STEP_SERVICE"
 systemctl daemon-reload
-systemctl enable --now zimbra-migration
+systemctl enable zimbra-migration
+systemctl restart zimbra-migration
 systemctl --no-pager --full status zimbra-migration || true
 
 echo

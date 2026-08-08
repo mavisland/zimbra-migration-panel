@@ -152,6 +152,17 @@ CSV UTF-8 olmalıdır. Varsayılan sınırlar 5 MiB ve 5.000 hesaptır. Tarihler
 
 Kuyruk yöneticisi uygulama içinde çalıştığından yalnızca tek Uvicorn worker kullanın. Güncelleme için yeni kodu aldıktan sonra `setup.sh` yeniden çalıştırılabilir; `migration_db.sql` dosyasını ise canlı veritabanına elle içe aktarmayın.
 
+### Güncelleme
+
+Git deposundaki `git pull` yalnızca klonlanan kaynak dizini günceller; çalışan `/opt/zimbra-migration` kopyasını tek başına değiştirmez. Güncellemeyi devreye almak için depo dizininde iki komutu birlikte çalıştırın:
+
+```bash
+git pull --ff-only
+sudo bash setup.sh
+```
+
+`setup.sh` mevcut `.env`, şifreleme anahtarı ve verileri korur; güncel dosyaları `/opt/zimbra-migration` altına kopyalar, Python bağımlılıklarını eşitler ve `zimbra-migration` servisini yeniden başlatır. Servis durumunda `active (running)` gördüğünüzde yeni sürüm devrededir.
+
 ### Geliştirici testleri
 
 ```bash
@@ -294,6 +305,17 @@ For the first attempt, use two test mailboxes rather than real users. Open the *
 - The interface uses Turkish when the browser language starts with `tr`, and English for every other language. ETA is calculated from elapsed time per transferred message for running jobs; it remains in the calculating state while queued jobs have not discovered their message counts.
 
 Run exactly one Uvicorn worker because the queue manager lives inside the application process. After pulling updated code, `setup.sh` may be run again; do not manually import `migration_db.sql` into a live database.
+
+### Updating
+
+Running `git pull` updates only the cloned source directory; it does not update the active copy under `/opt/zimbra-migration` by itself. Run both commands from the repository directory:
+
+```bash
+git pull --ff-only
+sudo bash setup.sh
+```
+
+`setup.sh` preserves the existing `.env`, encryption key, and data; copies current files into `/opt/zimbra-migration`, synchronizes Python dependencies, and restarts the `zimbra-migration` service. The new version is active when the service reports `active (running)`.
 
 ### Developer tests
 

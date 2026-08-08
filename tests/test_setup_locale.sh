@@ -19,6 +19,7 @@ echo "Setup locale detection tests passed."
 grep -q 'CREATE DATABASE IF NOT EXISTS' "$ROOT/setup.sh"
 grep -q 'CREATE USER IF NOT EXISTS' "$ROOT/setup.sh"
 grep -q 'HAS_EXISTING_CONFIG' "$ROOT/setup.sh"
+grep -q 'systemctl restart zimbra-migration' "$ROOT/setup.sh"
 echo "Setup repeatability guards are present."
 
 for VALID_USERNAME in admin Migration2026 User123; do
