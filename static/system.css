@@ -3,3 +3,8 @@
 .system-banner{display:flex;gap:10px;align-items:center;margin-bottom:18px;padding:13px 16px;border:1px solid #f4bbc1;border-radius:9px;background:#fff1f2;color:#a52c3a}
 .system-banner span{font-size:12px}
 @media(max-width:720px){.system-banner{align-items:flex-start;flex-direction:column}}
+.form-actions{display:grid;grid-template-columns:1fr 1.3fr;gap:10px;margin-top:14px}
+.form-actions .primary{margin-top:0}
+.secondary{height:40px;border:1px solid var(--blue);border-radius:7px;background:#fff;color:var(--blue);font-weight:800;cursor:pointer}
+.secondary:disabled{opacity:.6}
+@media(max-width:720px){.form-actions{grid-template-columns:1fr}}

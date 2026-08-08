@@ -93,6 +93,8 @@ mysql -h 127.0.0.1 -u zimbra_migrator -p zimbra_migration < migration_db.sql
 ```dotenv
 IMAPSYNC_PATH=/usr/local/bin/imapsync
 MAX_PARALLEL=3
+CSV_MAX_BYTES=5242880
+CSV_MAX_ROWS=5000
 APP_HOST=127.0.0.1
 APP_PORT=8787
 MYSQL_HOST=127.0.0.1
@@ -140,6 +142,8 @@ Test sırasında şunları doğrulayın:
 - Aktarım yüzdesi ve ileti sayılarının güncellendiğini,
 - Tamamlanan hesabın `Biten Hesaplar` grubuna taşındığını,
 - Aynı hesabı yeniden çalıştırdığınızda iletilerin çoğaltılmadığını.
+
+Tekli formdaki **Bağlantıyı Test Et** düğmesi imapsync `--justlogin` ile iki sunucuya oturum açmayı dener; aktarım başlatmaz. Tekli aktarım eklenirken bu kontrol sunucu tarafında zorunlu olarak bir kez daha uygulanır. CSV yüklemeleri UTF-8, zorunlu başlıklar, 5 MiB dosya boyutu ve varsayılan 5.000 hesap sınırıyla doğrulanır. Bu sınırlar `.env` üzerinden değiştirilebilir.
 
 Arayüz imapsync bulunamadığında üst bölümde kırmızı bir sistem uyarısı gösterir ve yeni aktarım eklemeyi engeller. Mevcut bekleyen işler de imapsync kurulana kadar başlatılmaz.
 

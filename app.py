@@ -32,7 +32,13 @@ LOGS = ROOT / "logs"
 PIDS = DATA / "pids"
 KEY_PATH = DATA / "secret.key"
 MAX_PARALLEL = max(1, int(os.getenv("MAX_PARALLEL", "3")))
+CSV_MAX_BYTES = max(1024, int(os.getenv("CSV_MAX_BYTES", str(5 * 1024 * 1024))))
+CSV_MAX_ROWS = max(1, int(os.getenv("CSV_MAX_ROWS", "5000")))
 IMAPSYNC_PATH = os.getenv("IMAPSYNC_PATH", "imapsync")
+CSV_REQUIRED_FIELDS = {"source_host", "source_port", "source_security", "source_email",
+                       "source_password", "target_host", "target_port", "target_security",
+                       "target_email", "target_password", "start_date", "end_date"}
+IMAPSYNC_STATUS_CACHE: dict = {"checked_at": 0.0, "value": None}
 
 DATA.mkdir(exist_ok=True)
 LOGS.mkdir(exist_ok=True)
@@ -99,22 +105,29 @@ def cipher() -> Fernet:
 CRYPT = cipher()
 
 
-def imapsync_status() -> dict:
+def imapsync_status(force: bool = False) -> dict:
+    if not force and IMAPSYNC_STATUS_CACHE["value"] and time.monotonic() - IMAPSYNC_STATUS_CACHE["checked_at"] < 30:
+        return IMAPSYNC_STATUS_CACHE["value"]
     executable = shutil.which(IMAPSYNC_PATH) if not Path(IMAPSYNC_PATH).is_file() else str(Path(IMAPSYNC_PATH).resolve())
     if not executable:
-        return {"available": False, "path": IMAPSYNC_PATH, "version": None,
-                "error": "imapsync bulunamadı. Ubuntu kurulum adımlarını tamamlayın."}
+        status = {"available": False, "path": IMAPSYNC_PATH, "version": None,
+                  "error": "imapsync bulunamadı. Ubuntu kurulum adımlarını tamamlayın."}
+        IMAPSYNC_STATUS_CACHE.update(checked_at=time.monotonic(), value=status)
+        return status
     try:
         result = subprocess.run([executable, "--version"], capture_output=True, text=True,
                                 timeout=10, creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
         output = (result.stdout or result.stderr).strip().splitlines()
         if result.returncode != 0:
-            return {"available": False, "path": executable, "version": None,
-                    "error": output[-1] if output else f"imapsync çıkış kodu: {result.returncode}"}
-        return {"available": True, "path": executable,
-                "version": output[-1] if output else "Sürüm bilgisi alınamadı", "error": None}
+            status = {"available": False, "path": executable, "version": None,
+                      "error": output[-1] if output else f"imapsync çıkış kodu: {result.returncode}"}
+        else:
+            status = {"available": True, "path": executable,
+                      "version": output[-1] if output else "Sürüm bilgisi alınamadı", "error": None}
     except (OSError, subprocess.SubprocessError) as exc:
-        return {"available": False, "path": executable, "version": None, "error": str(exc)}
+        status = {"available": False, "path": executable, "version": None, "error": str(exc)}
+    IMAPSYNC_STATUS_CACHE.update(checked_at=time.monotonic(), value=status)
+    return status
 
 
 def imapsync_exists() -> bool:
@@ -122,7 +135,7 @@ def imapsync_exists() -> bool:
 
 
 def require_imapsync() -> None:
-    status = imapsync_status()
+    status = imapsync_status(force=True)
     if not status["available"]:
         raise HTTPException(503, status["error"])
 
@@ -134,26 +147,48 @@ def clean_security(value: str) -> str:
     return value
 
 
-def add_job(payload: dict) -> int:
+def validate_payload(payload: dict) -> dict:
     required = ["source_host", "source_email", "source_password", "target_host", "target_email", "target_password"]
     if any(not str(payload.get(key, "")).strip() for key in required):
         raise ValueError("Zorunlu alanlar eksik")
-    lock_material = "\0".join(str(payload[key]).strip().lower() for key in
+    for key in ("source_host", "target_host", "source_email", "target_email"):
+        value = str(payload[key]).strip()
+        if any(ord(char) < 32 for char in value):
+            raise ValueError(f"{key} kontrol karakteri içeremez")
+    for key in ("source_email", "target_email"):
+        email = str(payload[key]).strip()
+        if email.count("@") != 1 or not all(email.split("@")):
+            raise ValueError(f"Geçersiz e-posta adresi: {email}")
+    source_port = int(payload.get("source_port") or 993)
+    target_port = int(payload.get("target_port") or 993)
+    if not 1 <= source_port <= 65535 or not 1 <= target_port <= 65535:
+        raise ValueError("Port 1 ile 65535 arasında olmalıdır")
+    start_date = str(payload.get("start_date") or "").strip()
+    end_date = str(payload.get("end_date") or "").strip()
+    start = datetime.strptime(start_date, "%Y-%m-%d").date() if start_date else None
+    end = datetime.strptime(end_date, "%Y-%m-%d").date() if end_date else None
+    if start and end and end < start:
+        raise ValueError("Bitiş tarihi başlangıç tarihinden önce olamaz")
+    return {
+        "source_host": str(payload["source_host"]).strip(), "source_port": source_port,
+        "source_security": clean_security(str(payload.get("source_security") or "ssl")),
+        "source_email": str(payload["source_email"]).strip(), "source_password": str(payload["source_password"]),
+        "target_host": str(payload["target_host"]).strip(), "target_port": target_port,
+        "target_security": clean_security(str(payload.get("target_security") or "ssl")),
+        "target_email": str(payload["target_email"]).strip(), "target_password": str(payload["target_password"]),
+        "start_date": start_date or None, "end_date": end_date or None,
+    }
+
+
+def add_job(payload: dict) -> int:
+    normalized = validate_payload(payload)
+    lock_material = "\0".join(str(normalized[key]).strip().lower() for key in
                               ("source_host", "source_email", "target_host", "target_email"))
     lock_key = hashlib.sha256(lock_material.encode()).hexdigest()
     values = {
-        "source_host": str(payload["source_host"]).strip(),
-        "source_port": int(payload.get("source_port", 993)),
-        "source_security": clean_security(str(payload.get("source_security", "ssl"))),
-        "source_email": str(payload["source_email"]).strip(),
-        "source_password": CRYPT.encrypt(str(payload["source_password"]).encode()),
-        "target_host": str(payload["target_host"]).strip(),
-        "target_port": int(payload.get("target_port", 993)),
-        "target_security": clean_security(str(payload.get("target_security", "ssl"))),
-        "target_email": str(payload["target_email"]).strip(),
-        "target_password": CRYPT.encrypt(str(payload["target_password"]).encode()),
-        "start_date": str(payload.get("start_date") or "").strip() or None,
-        "end_date": str(payload.get("end_date") or "").strip() or None,
+        **normalized,
+        "source_password": CRYPT.encrypt(normalized["source_password"].encode()),
+        "target_password": CRYPT.encrypt(normalized["target_password"].encode()),
         "lock_key": lock_key,
         "active_lock": lock_key,
     }
@@ -176,6 +211,38 @@ def public_job(row: dict) -> dict:
     item.pop("source_password", None)
     item.pop("target_password", None)
     return item
+
+
+def test_connections(payload: dict) -> dict:
+    normalized = validate_payload(payload)
+    passfiles = []
+    try:
+        for password in (normalized["source_password"], normalized["target_password"]):
+            handle = tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False, dir=DATA, prefix=".pass-")
+            handle.write(password)
+            handle.close()
+            os.chmod(handle.name, 0o600)
+            passfiles.append(handle.name)
+        cmd = [IMAPSYNC_PATH, "--host1", normalized["source_host"], "--port1", str(normalized["source_port"]),
+               "--user1", normalized["source_email"], "--passfile1", passfiles[0],
+               "--host2", normalized["target_host"], "--port2", str(normalized["target_port"]),
+               "--user2", normalized["target_email"], "--passfile2", passfiles[1],
+               "--justlogin", "--nolog", "--noreleasecheck"]
+        for side, prefix in ((1, "source"), (2, "target")):
+            security = normalized[f"{prefix}_security"]
+            if security == "ssl": cmd.append(f"--ssl{side}")
+            elif security == "tls": cmd.append(f"--tls{side}")
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=90,
+                                creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
+        if result.returncode:
+            output = (result.stdout + "\n" + result.stderr).strip().splitlines()
+            raise ValueError(output[-1] if output else f"imapsync çıkış kodu: {result.returncode}")
+        return {"ok": True, "message": "Kaynak ve hedef IMAP oturumları doğrulandı"}
+    except subprocess.TimeoutExpired as exc:
+        raise ValueError("IMAP bağlantı testi 90 saniyede tamamlanamadı") from exc
+    finally:
+        for filename in passfiles:
+            Path(filename).unlink(missing_ok=True)
 
 
 class MigrationManager:
@@ -241,10 +308,13 @@ class MigrationManager:
             security = row[f"{'source' if side == 1 else 'target'}_security"]
             if security == "ssl": cmd.append(f"--ssl{side}")
             elif security == "tls": cmd.append(f"--tls{side}")
+        search_terms = []
         if row["start_date"]:
-            cmd += ["--search1", f"SENTSINCE {row['start_date'].strftime('%d-%b-%Y')}"]
+            search_terms.append(f"SENTSINCE {row['start_date'].strftime('%d-%b-%Y')}")
         if row["end_date"]:
-            cmd += ["--search1", f"SENTBEFORE {row['end_date'].strftime('%d-%b-%Y')}"]
+            search_terms.append(f"SENTBEFORE {row['end_date'].strftime('%d-%b-%Y')}")
+        if search_terms:
+            cmd += ["--search1", " ".join(search_terms)]
         return cmd
 
     async def run_job(self, job_id: int) -> None:
@@ -439,6 +509,7 @@ def create_job(
 ):
     require_imapsync()
     try:
+        test_connections(locals())
         job_id = add_job(locals())
     except pymysql.err.IntegrityError as exc:
         raise HTTPException(409, "Bu kaynak ve hedef hesap için zaten aktif bir aktarım var") from exc
@@ -448,13 +519,42 @@ def create_job(
     return {"id": job_id}
 
 
+@app.post("/api/preflight")
+def preflight(
+    source_host: Annotated[str, Form()], source_port: Annotated[int, Form()] = 993,
+    source_security: Annotated[str, Form()] = "ssl", source_email: Annotated[str, Form()] = "",
+    source_password: Annotated[str, Form()] = "", target_host: Annotated[str, Form()] = "",
+    target_port: Annotated[int, Form()] = 993, target_security: Annotated[str, Form()] = "ssl",
+    target_email: Annotated[str, Form()] = "", target_password: Annotated[str, Form()] = "",
+    start_date: Annotated[str, Form()] = "", end_date: Annotated[str, Form()] = "",
+):
+    require_imapsync()
+    try:
+        return test_connections(locals())
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
 @app.post("/api/jobs/import")
 async def import_jobs(file: Annotated[UploadFile, File()]):
     require_imapsync()
-    content = (await file.read()).decode("utf-8-sig")
+    raw = await file.read(CSV_MAX_BYTES + 1)
+    if len(raw) > CSV_MAX_BYTES:
+        raise HTTPException(413, f"CSV en fazla {CSV_MAX_BYTES} byte olabilir")
+    try:
+        content = raw.decode("utf-8-sig")
+    except UnicodeDecodeError as exc:
+        raise HTTPException(422, "CSV UTF-8 kodlamasında olmalıdır") from exc
     reader = csv.DictReader(io.StringIO(content))
+    headers = set(reader.fieldnames or [])
+    missing = sorted(CSV_REQUIRED_FIELDS - headers)
+    if missing:
+        raise HTTPException(422, f"CSV başlıkları eksik: {', '.join(missing)}")
     ids, errors = [], []
     for line, row in enumerate(reader, 2):
+        if line - 1 > CSV_MAX_ROWS:
+            errors.append({"line": line, "error": f"En fazla {CSV_MAX_ROWS} hesap içe aktarılabilir"})
+            break
         try:
             ids.append(add_job(row))
         except pymysql.err.IntegrityError:
