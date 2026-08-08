@@ -191,6 +191,8 @@ Tarayıcıdan `http://ZIMBRA_SUNUCU_IP:8787` adresine erişebilirsiniz. Bu bağl
 sudo useradd --system --home /opt/zimbra-migration --shell /usr/sbin/nologin zimbra-migrator
 sudo mkdir -p /opt/zimbra-migration
 sudo chown zimbra-migrator:zimbra-migrator /opt/zimbra-migration
+sudo -u zimbra-migrator mkdir -p /opt/zimbra-migration/data/pids /opt/zimbra-migration/logs
+sudo chmod 700 /opt/zimbra-migration/data /opt/zimbra-migration/data/pids /opt/zimbra-migration/logs
 sudo -u zimbra-migrator python3 -m venv /opt/zimbra-migration/.venv
 sudo -u zimbra-migrator /opt/zimbra-migration/.venv/bin/pip install -r /opt/zimbra-migration/requirements.txt
 ```
@@ -209,6 +211,8 @@ sudo systemctl status zimbra-migration
 ```
 
 Güvenlik nedeniyle örnek servis tek Uvicorn worker kullanır. Kuyruk yöneticisi uygulama içi olduğundan birden fazla web worker aynı aktarımı başlatabilir.
+
+Her aktarım kendine ait `data/pids/job-ID.pid` dosyasını kullanır. Böylece `--pidfilelocking`, üç paralel imapsync sürecinin birbirini engellemesine neden olmaz. Uygulama başlangıçta yarım kalmış `starting`, `running` ve `stopping` kayıtlarını `interrupted` durumuna alır; artık geçici parola ve PID dosyalarını temizler.
 
 ### 3. Nginx, TLS ve parola koruması
 

@@ -27,12 +27,14 @@ ROOT = Path(__file__).resolve().parent
 load_dotenv(ROOT / ".env")
 DATA = ROOT / "data"
 LOGS = ROOT / "logs"
+PIDS = DATA / "pids"
 KEY_PATH = DATA / "secret.key"
 MAX_PARALLEL = max(1, int(os.getenv("MAX_PARALLEL", "3")))
 IMAPSYNC_PATH = os.getenv("IMAPSYNC_PATH", "imapsync")
 
 DATA.mkdir(exist_ok=True)
 LOGS.mkdir(exist_ok=True)
+PIDS.mkdir(exist_ok=True)
 
 
 def now() -> datetime:
@@ -73,8 +75,13 @@ def db() -> Database:
 
 
 def init_db() -> None:
+    for pattern in (".pass-*", "pids/job-*.pid"):
+        for stale_file in DATA.glob(pattern):
+            stale_file.unlink(missing_ok=True)
     with db() as conn:
-        conn.execute("UPDATE jobs SET status='interrupted', error='Uygulama yeniden başlatıldı' WHERE status='running'")
+        conn.execute("""UPDATE jobs SET status='interrupted', pid=NULL, finished_at=?,
+            error='Uygulama yeniden başlatıldığı için aktarım kesildi'
+            WHERE status IN ('starting','running','stopping')""", (now(),))
 
 
 def cipher() -> Fernet:
@@ -181,8 +188,21 @@ class MigrationManager:
         self.wakeup.set()
         if self.loop_task:
             await self.loop_task
-        for process in self.running.values():
+        running_ids = list(self.running)
+        if running_ids:
+            placeholders = ",".join("?" for _ in running_ids)
+            with db() as conn:
+                conn.execute(f"""UPDATE jobs SET status='interrupted', pid=NULL, finished_at=?,
+                    error='Uygulama kapatıldığı için aktarım kesildi' WHERE id IN ({placeholders})""",
+                    (now(), *running_ids))
+        for process in list(self.running.values()):
             process.terminate()
+        if self.tasks:
+            try:
+                await asyncio.wait_for(asyncio.gather(*self.tasks, return_exceptions=True), timeout=15)
+            except asyncio.TimeoutError:
+                for process in list(self.running.values()):
+                    process.kill()
 
     async def scheduler(self) -> None:
         while not self.stop_event.is_set():
@@ -202,13 +222,14 @@ class MigrationManager:
             except asyncio.TimeoutError:
                 pass
 
-    def command(self, row: dict, pass1: str, pass2: str, log_path: Path) -> list[str]:
+    def command(self, row: dict, pass1: str, pass2: str, pid_path: Path) -> list[str]:
         cmd = [IMAPSYNC_PATH,
                "--host1", row["source_host"], "--port1", str(row["source_port"]),
                "--user1", row["source_email"], "--passfile1", pass1,
                "--host2", row["target_host"], "--port2", str(row["target_port"]),
                "--user2", row["target_email"], "--passfile2", pass2,
-               "--automap", "--addheader", "--pidfilelocking", "--nolog"]
+               "--automap", "--addheader", "--pidfile", str(pid_path),
+               "--pidfilelocking", "--nolog"]
         for side in (1, 2):
             security = row[f"{'source' if side == 1 else 'target'}_security"]
             if security == "ssl": cmd.append(f"--ssl{side}")
@@ -225,6 +246,7 @@ class MigrationManager:
         if not row:
             return
         log_path = LOGS / f"job-{job_id}.log"
+        pid_path = PIDS / f"job-{job_id}.pid"
         passfiles: list[str] = []
         try:
             for encrypted in (row["source_password"], row["target_password"]):
@@ -236,7 +258,8 @@ class MigrationManager:
                 except OSError:
                     pass
                 passfiles.append(handle.name)
-            cmd = self.command(row, passfiles[0], passfiles[1], log_path)
+            pid_path.unlink(missing_ok=True)
+            cmd = self.command(row, passfiles[0], passfiles[1], pid_path)
             with db() as conn:
                 conn.execute("UPDATE jobs SET status='running', log_path=? WHERE id=?", (str(log_path), job_id))
             with log_path.open("w", encoding="utf-8", errors="replace") as logfile:
@@ -256,6 +279,8 @@ class MigrationManager:
                 current = conn.execute("SELECT status FROM jobs WHERE id=?", (job_id,)).fetchone()["status"]
                 if current == "stopping":
                     conn.execute("UPDATE jobs SET status='stopped', finished_at=?, pid=NULL WHERE id=?", (now(), job_id))
+                elif current == "interrupted":
+                    conn.execute("UPDATE jobs SET finished_at=?, pid=NULL WHERE id=?", (now(), job_id))
                 elif code == 0:
                     conn.execute("UPDATE jobs SET status='completed', progress=100, finished_at=?, pid=NULL WHERE id=?", (now(), job_id))
                 else:
@@ -267,6 +292,7 @@ class MigrationManager:
             self.running.pop(job_id, None)
             for filename in passfiles:
                 Path(filename).unlink(missing_ok=True)
+            pid_path.unlink(missing_ok=True)
             self.wakeup.set()
 
     def parse_progress(self, job_id: int, line: str) -> None:
