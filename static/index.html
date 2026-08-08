@@ -1,36 +1,40 @@
 <!doctype html>
 <html lang="tr">
-<head>
-  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Zimbra IMAP Aktarım Paneli</title>
-  <link rel="stylesheet" href="/static/style.css">
-</head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Zimbra Göç Merkezi</title><link rel="stylesheet" href="/static/style.css"></head>
 <body>
-  <main>
-    <header><div><span class="eyebrow">RAPORZEN · ZIMBRA</span><h1>Posta Aktarım Merkezi</h1><p>IMAP hesaplarını güvenle sıraya alın ve canlı takip edin.</p></div><div class="health"><i></i> Yerel servis aktif</div></header>
-    <section class="metrics">
-      <article><label>Keşfedilen E-Posta</label><strong id="discovered">0</strong></article>
-      <article><label>Başarılı Aktarım</label><strong class="green" id="transferred">0</strong></article>
-      <article><label>Mükerrer (Atlanan)</label><strong class="orange" id="skipped">0</strong></article>
-      <article><label>Aktif / Kapasite</label><strong class="blue"><span id="running">0</span> / <span id="capacity">3</span></strong></article>
-    </section>
-    <section class="workspace">
-      <aside class="panel form-panel">
-        <div class="panel-title"><h2>Yeni Aktarım</h2><div class="tabs"><button class="active" data-tab="single">Tekli</button><button data-tab="csv">Toplu (CSV)</button></div></div>
-        <form id="singleForm">
-          <div class="grid two"><label>Kaynak IMAP<input name="source_host" value="imap.example.com" required></label><label>Hedef IMAP<input name="target_host" value="mail.example.com" required></label></div>
-          <div class="grid four"><label>Kaynak güvenlik<select name="source_security"><option value="ssl">SSL</option><option value="tls">STARTTLS</option><option value="none">Yok</option></select></label><label>Port<input type="number" name="source_port" value="993" required></label><label>Hedef güvenlik<select name="target_security"><option value="ssl">SSL</option><option value="tls">STARTTLS</option><option value="none">Yok</option></select></label><label>Port<input type="number" name="target_port" value="993" required></label></div>
-          <div class="credentials"><div class="grid two"><label>Eski e-posta<input type="email" name="source_email" placeholder="ornek@eski.com" required></label><label>Şifre<input type="password" name="source_password" placeholder="Eski şifre" required></label><label>Yeni e-posta<input type="email" name="target_email" placeholder="ornek@yeni.com" required></label><label>Şifre<input type="password" name="target_password" placeholder="Yeni şifre" required></label></div></div>
-          <div class="datebox"><div class="grid two"><label>Başlangıç tarihi<input type="date" name="start_date"></label><label>Bitiş tarihi<input type="date" name="end_date"></label></div><small>Boş bırakırsanız tüm e-postalar aktarılır.</small></div>
-          <button class="primary" type="submit">Hemen Ekle ve Başlat</button>
-        </form>
-        <form id="csvForm" class="hidden"><div class="drop"><span>CSV</span><h3>Hesap listesini seçin</h3><p>Şablondaki başlıkları içeren UTF-8 CSV dosyası</p><input type="file" name="file" accept=".csv,text/csv" required></div><button class="primary" type="submit">CSV'yi Kuyruğa Al</button><a class="template" href="/static/accounts-template.csv" download>CSV şablonunu indir</a></form>
-        <div id="notice" class="notice hidden"></div>
-      </aside>
-      <section class="panel flow"><div class="panel-title"><div><h2>Aktarım Akışı</h2><p id="queueInfo">Kuyruk yükleniyor…</p></div><button class="ghost" id="refresh">Yenile</button></div><div id="jobList" class="jobs"></div></section>
-    </section>
-  </main>
+  <aside class="sidebar">
+    <div class="brand"><span class="brand-icon">▰</span><span>GÖÇ MERKEZİ</span></div>
+    <nav><a class="active" href="#">▥ <span>Aktarım Paneli</span></a><a href="#">⇩ <span>Raporları İndir</span></a><hr><button id="pauseAll">Ⅱ <span>İşlemi Duraklat</span></button><button class="danger" id="clearQueue">♲ <span>Kuyruğu Temizle</span></button></nav>
+  </aside>
+  <div class="shell">
+    <header><h1>Göç Paneli</h1><div class="health"><i></i> Sistem Aktif</div></header>
+    <main>
+      <section class="metrics">
+        <article><label>Keşfedilen E-Posta</label><strong id="discovered">0</strong></article>
+        <article><label>Başarılı Aktarım</label><strong class="green" id="transferred">0</strong></article>
+        <article><label>Mükerrer (Atlanan)</label><strong class="orange" id="skipped">0</strong></article>
+        <article><label>Kalan Tahmini Süre</label><strong class="blue" id="remaining">Hesaplanıyor</strong></article>
+      </section>
+      <section class="workspace">
+        <div class="left-column">
+          <aside class="panel form-panel">
+            <div class="panel-title"><h2>Yeni Aktarım</h2><div class="tabs"><button class="active" data-tab="single">Tekli</button><button data-tab="csv">Toplu (CSV)</button></div></div>
+            <form id="singleForm">
+              <div class="grid two"><label>Kaynak IMAP<input name="source_host" value="imap.example.com" required></label><label>Hedef IMAP<input name="target_host" value="mail.example.com" required></label></div>
+              <div class="grid four"><label>Kaynak Güvenlik<select name="source_security"><option value="ssl">SSL</option><option value="tls">STARTTLS</option><option value="none">Yok</option></select></label><label>Port<input type="number" name="source_port" value="993" required></label><label>Hedef Güvenlik<select name="target_security"><option value="ssl">SSL</option><option value="tls">STARTTLS</option><option value="none">Yok</option></select></label><label>Port<input type="number" name="target_port" value="993" required></label></div>
+              <div class="credentials"><div class="grid two"><label>ESKİ E-POSTA<input type="email" name="source_email" placeholder="ornek@eski.com" required></label><label>ŞİFRE<input type="password" name="source_password" placeholder="Eski şifre" required></label><label class="accent">YENİ E-POSTA<input type="email" name="target_email" placeholder="ornek@yeni.com" required></label><label class="accent">ŞİFRE<input type="password" name="target_password" placeholder="Yeni şifre" required></label></div></div>
+              <div class="datebox"><div class="grid two"><label>Başlangıç Tarihi<input type="date" name="start_date"></label><label>Bitiş Tarihi<input type="date" name="end_date"></label></div><small>Boş bırakırsanız tüm e-postalar aktarılır. Yalnızca başlangıç tarihi de seçilebilir.</small></div>
+              <button class="primary" type="submit">Hemen Ekle &amp; Başlat</button>
+            </form>
+            <form id="csvForm" class="hidden"><div class="drop"><span>CSV</span><h3>Hesap listesini seçin</h3><p>Şablondaki başlıkları içeren UTF-8 CSV dosyası</p><input type="file" name="file" accept=".csv,text/csv" required></div><button class="primary" type="submit">CSV'yi Kuyruğa Al</button><a class="template" href="/static/accounts-template.csv" download>CSV şablonunu indir</a></form>
+            <div id="notice" class="notice hidden"></div>
+          </aside>
+          <section class="panel status-card"><div class="panel-title"><h2>Durum Özeti</h2></div><dl><div><dt>Kayıtlı Hesap:</dt><dd id="totalAccounts">0</dd></div><div><dt>Aktif İşlenen:</dt><dd class="blue-pill" id="activeAccounts">0</dd></div><div><dt>Tamamlanan:</dt><dd class="green-pill" id="completedAccounts">0</dd></div><div><dt>Hatalı:</dt><dd class="red-pill" id="failedAccounts">0</dd></div></dl></section>
+        </div>
+        <section class="panel flow"><div class="panel-title"><div><h2>Aktarım Akışı</h2><p id="queueInfo">Kuyruk yükleniyor…</p></div><button class="ghost" id="refresh">Yenile</button></div><div id="jobList" class="flow-groups"></div></section>
+      </section>
+    </main>
+  </div>
+  <button class="to-top" onclick="scrollTo({top:0,behavior:'smooth'})">⌃</button>
   <script src="/static/app.js"></script>
-</body>
-</html>
-
+</body></html>
