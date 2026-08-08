@@ -122,12 +122,14 @@ CSV UTF-8 olmalıdır. Varsayılan sınırlar 5 MiB ve 5.000 hesaptır. Tarihler
 ### Çalışma biçimi
 
 - Parolalar MySQL'de Fernet ile şifreli tutulur ve imapsync'e `0600` izinli geçici passfile üzerinden verilir.
+- Tamamlanan veya duran işlerin şifreli parolaları varsayılan olarak 24 saat sonra silinir. Süre `CREDENTIAL_RETENTION_HOURS` ile değiştirilebilir; sonrasında yeniden denemek için hesap tekrar eklenmelidir.
 - Aynı kaynak/hedef posta kutusu çifti eş zamanlı olarak ikinci kez başlatılamaz.
 - Her aktarım ayrı PID ve log dosyası kullanır; varsayılan paralellik üç hesaptır.
 - İş, imapsync başarılı çıkış ve bütünlük özeti verdiğinde tamamlanmış sayılır.
 - Servis yeniden başlarsa yarım kalan işler `interrupted` olur ve yeniden denenebilir.
 - imapsync bulunamazsa yeni aktarım kabul edilmez.
 - `migration_db.sql` temiz kurulum için gereken bütün tabloları içeren tek şema dosyasıdır.
+- Kuyruğu duraklatma seçimi servis yeniden başlatıldığında korunur; parola içermeyen CSV raporu sol menüden indirilebilir. Dashboard son 500 işi gösterir, rapor bütün işleri içerir.
 
 Kuyruk yöneticisi uygulama içinde çalıştığından yalnızca tek Uvicorn worker kullanın. Güncelleme sırasında `setup.sh` veya `migration_db.sql` dosyasını canlı sisteme yeniden uygulamayın; sürüme ait güncelleme notlarını izleyin.
 
@@ -249,12 +251,14 @@ For the first attempt, use two test mailboxes rather than real users. Open the *
 ### Runtime behavior
 
 - Passwords are Fernet-encrypted in MySQL and passed to imapsync through temporary passfiles with `0600` permissions.
+- Encrypted passwords for finished or stopped jobs are deleted after 24 hours by default. Configure `CREDENTIAL_RETENTION_HOURS` to change this period; after deletion, add the account again instead of retrying it.
 - The same source/target mailbox pair cannot run concurrently twice.
 - Each transfer has separate PID and log files; the default concurrency is three accounts.
 - A job completes only after a successful imapsync exit and integrity summary.
 - Jobs left in progress after a service restart become `interrupted` and can be retried.
 - New migrations are rejected when imapsync is unavailable.
 - `migration_db.sql` is the only schema file required for a clean installation.
+- Queue pause state survives service restarts. A password-free CSV report is available from the sidebar. The dashboard shows the latest 500 jobs while the report contains every job.
 
 Run exactly one Uvicorn worker because the queue manager lives inside the application process. Do not re-run `setup.sh` or import `migration_db.sql` into a live installation during updates; follow the release-specific upgrade notes.
 

@@ -14,7 +14,7 @@ import subprocess
 import tempfile
 import time
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Annotated
 
@@ -23,8 +23,8 @@ import pymysql
 from pymysql.cursors import DictCursor
 from dotenv import load_dotenv
 from cryptography.fernet import Fernet
-from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, StreamingResponse
+from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.sessions import SessionMiddleware
@@ -39,6 +39,7 @@ KEY_PATH = DATA / "secret.key"
 MAX_PARALLEL = max(1, int(os.getenv("MAX_PARALLEL", "3")))
 CSV_MAX_BYTES = max(1024, int(os.getenv("CSV_MAX_BYTES", str(5 * 1024 * 1024))))
 CSV_MAX_ROWS = max(1, int(os.getenv("CSV_MAX_ROWS", "5000")))
+CREDENTIAL_RETENTION_HOURS = max(0, int(os.getenv("CREDENTIAL_RETENTION_HOURS", "24")))
 IMAPSYNC_PATH = os.getenv("IMAPSYNC_PATH", "imapsync")
 IMAPSYNC_SSL_VERIFY = os.getenv("IMAPSYNC_SSL_VERIFY", "true").lower() in {"1", "true", "yes"}
 APP_USERNAME = os.getenv("APP_USERNAME", "admin")
@@ -100,6 +101,7 @@ def init_db() -> None:
         for stale_file in DATA.glob(pattern):
             stale_file.unlink(missing_ok=True)
     with db() as conn:
+        conn.execute("INSERT IGNORE INTO app_state (state_key,state_value) VALUES ('paused','0')")
         conn.execute("""UPDATE jobs SET status='interrupted', pid=NULL, active_lock=NULL, finished_at=?,
             error='Uygulama yeniden başlatıldığı için aktarım kesildi'
             WHERE status IN ('starting','running','stopping')""", (now(),))
@@ -247,6 +249,7 @@ def add_job(payload: dict) -> int:
 
 def public_job(row: dict) -> dict:
     item = dict(row)
+    item["credentials_available"] = bool(item.get("source_password") and item.get("target_password"))
     item.pop("source_password", None)
     item.pop("target_password", None)
     return item
@@ -289,8 +292,13 @@ class MigrationManager:
         self.tasks: set[asyncio.Task] = set()
         self.loop_task: asyncio.Task | None = None
         self.paused = False
+        self.last_housekeeping = 0.0
 
     async def start(self) -> None:
+        with db() as conn:
+            state = conn.execute("SELECT state_value FROM app_state WHERE state_key='paused'").fetchone()
+        self.paused = bool(state and state["state_value"] == "1")
+        self.purge_expired_credentials()
         self.loop_task = asyncio.create_task(self.scheduler())
 
     async def shutdown(self) -> None:
@@ -316,6 +324,8 @@ class MigrationManager:
 
     async def scheduler(self) -> None:
         while not self.stop_event.is_set():
+            if time.monotonic() - self.last_housekeeping >= 60:
+                self.purge_expired_credentials()
             capacity = MAX_PARALLEL - len(self.running)
             if capacity > 0 and not self.paused and imapsync_exists():
                 with db() as conn:
@@ -331,6 +341,14 @@ class MigrationManager:
                 await asyncio.wait_for(self.wakeup.wait(), timeout=1)
             except asyncio.TimeoutError:
                 pass
+
+    def purge_expired_credentials(self) -> None:
+        cutoff = now() - timedelta(hours=CREDENTIAL_RETENTION_HOURS)
+        with db() as conn:
+            conn.execute("""UPDATE jobs SET source_password=NULL,target_password=NULL,credentials_purged_at=?
+                WHERE credentials_purged_at IS NULL AND finished_at IS NOT NULL AND finished_at <= ?
+                AND status IN ('completed','failed','stopped','interrupted')""", (now(), cutoff))
+        self.last_housekeeping = time.monotonic()
 
     def command(self, row: dict, pass1: str, pass2: str, pid_path: Path) -> list[str]:
         cmd = [IMAPSYNC_PATH,
@@ -359,6 +377,8 @@ class MigrationManager:
         pid_path = PIDS / f"job-{job_id}.pid"
         passfiles: list[str] = []
         try:
+            if not row["source_password"] or not row["target_password"]:
+                raise ValueError("Aktarım parolaları güvenli saklama süresi sonunda silinmiş")
             for encrypted in (row["source_password"], row["target_password"]):
                 handle = tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False, dir=DATA, prefix=".pass-")
                 handle.write(CRYPT.decrypt(encrypted).decode())
@@ -548,10 +568,27 @@ def index():
 
 
 @app.get("/api/jobs")
-def jobs():
+def jobs(limit: int = Query(500, ge=1, le=1000), offset: int = Query(0, ge=0)):
     with db() as conn:
-        rows = conn.execute("SELECT * FROM jobs ORDER BY id DESC").fetchall()
+        rows = conn.execute("SELECT * FROM jobs ORDER BY id DESC LIMIT ? OFFSET ?", (limit, offset)).fetchall()
     return [public_job(row) for row in rows]
+
+
+@app.get("/api/reports/jobs.csv")
+def jobs_report():
+    columns = ["id", "source_host", "source_email", "target_host", "target_email", "status",
+               "discovered", "transferred", "skipped", "bytes_transferred", "progress", "verified",
+               "detected_errors", "error", "created_at", "started_at", "finished_at"]
+    with db() as conn:
+        rows = conn.execute(f"SELECT {','.join(columns)} FROM jobs ORDER BY id DESC").fetchall()
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(columns)
+    for row in rows:
+        writer.writerow([row[column] if row[column] is not None else "" for column in columns])
+    filename = f"zimbra-migration-report-{now().strftime('%Y%m%d-%H%M%S')}.csv"
+    return Response("\ufeff" + output.getvalue(), media_type="text/csv; charset=utf-8",
+                    headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
 
 @app.get("/api/summary")
@@ -571,6 +608,9 @@ def summary():
 @app.post("/api/control/pause")
 def toggle_pause():
     manager.paused = not manager.paused
+    with db() as conn:
+        conn.execute("UPDATE app_state SET state_value=? WHERE state_key='paused'",
+                     ("1" if manager.paused else "0",))
     manager.wakeup.set()
     return {"paused": manager.paused}
 
@@ -659,11 +699,13 @@ async def stop_job(job_id: int):
 @app.post("/api/jobs/{job_id}/retry")
 def retry_job(job_id: int):
     with db() as conn:
-        row = conn.execute("SELECT status FROM jobs WHERE id=?", (job_id,)).fetchone()
+        row = conn.execute("SELECT status,source_password,target_password FROM jobs WHERE id=?", (job_id,)).fetchone()
         if not row:
             raise HTTPException(404, "Aktarım bulunamadı")
         if row["status"] in {"running", "starting", "stopping"}:
             raise HTTPException(409, "Çalışan aktarım yeniden başlatılamaz")
+        if not row["source_password"] or not row["target_password"]:
+            raise HTTPException(409, "Parolalar saklama süresi sonunda silindi; hesabı yeniden ekleyin")
         try:
             conn.execute("""UPDATE jobs SET status='queued',active_lock=lock_key,error=NULL,
                 progress=0,discovered=0,transferred=0,skipped=0,bytes_transferred=0,

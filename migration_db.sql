@@ -7,12 +7,12 @@ CREATE TABLE IF NOT EXISTS jobs (
     source_port INT UNSIGNED NOT NULL DEFAULT 993,
     source_security VARCHAR(16) NOT NULL DEFAULT 'ssl',
     source_email VARCHAR(320) NOT NULL,
-    source_password VARBINARY(2048) NOT NULL COMMENT 'Fernet ile şifrelenmiş kaynak parolası',
+    source_password VARBINARY(2048) NULL COMMENT 'Fernet ile şifrelenmiş kaynak parolası',
     target_host VARCHAR(255) NOT NULL,
     target_port INT UNSIGNED NOT NULL DEFAULT 993,
     target_security VARCHAR(16) NOT NULL DEFAULT 'ssl',
     target_email VARCHAR(320) NOT NULL,
-    target_password VARBINARY(2048) NOT NULL COMMENT 'Fernet ile şifrelenmiş hedef parolası',
+    target_password VARBINARY(2048) NULL COMMENT 'Fernet ile şifrelenmiş hedef parolası',
     start_date DATE NULL,
     end_date DATE NULL,
     lock_key CHAR(64) NOT NULL COMMENT 'Kaynak ve hedef mailbox çiftinin SHA-256 anahtarı',
@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS jobs (
     created_at DATETIME(6) NOT NULL,
     started_at DATETIME(6) NULL,
     finished_at DATETIME(6) NULL,
+    credentials_purged_at DATETIME(6) NULL,
     PRIMARY KEY (id),
     INDEX jobs_status_idx (status, id),
     INDEX jobs_target_email_idx (target_email),
@@ -40,3 +41,12 @@ CREATE TABLE IF NOT EXISTS jobs (
     CONSTRAINT jobs_security2_chk CHECK (target_security IN ('ssl', 'tls', 'none')),
     CONSTRAINT jobs_dates_chk CHECK (end_date IS NULL OR start_date IS NULL OR end_date >= start_date)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS app_state (
+    state_key VARCHAR(64) NOT NULL,
+    state_value TEXT NOT NULL,
+    updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
+    PRIMARY KEY (state_key)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT IGNORE INTO app_state (state_key, state_value) VALUES ('paused', '0');
