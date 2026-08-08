@@ -21,9 +21,18 @@ fi
 # shellcheck source=/dev/null
 source "$SOURCE_DIR/scripts/locales/setup.${LANGUAGE_CODE}.sh"
 
+valid_username() {
+  printf '%s\n' "$1" | LC_ALL=C grep -Eq '^[A-Za-z0-9._-]+$'
+}
+
 if [[ ${1:-} == "--print-language" ]]; then
   echo "$LANGUAGE_CODE"
   exit 0
+fi
+
+if [[ ${1:-} == "--validate-username" ]]; then
+  valid_username "${2:-}"
+  exit $?
 fi
 
 python_requirement_error() {
@@ -136,7 +145,7 @@ else
     read -r -p "$MSG_USERNAME_PROMPT" PANEL_USER
     PANEL_USER=$(printf '%s' "$PANEL_USER" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
     PANEL_USER=${PANEL_USER:-admin}
-    if [[ "$PANEL_USER" =~ ^[A-Za-z0-9._-]+$ ]]; then
+    if valid_username "$PANEL_USER"; then
       break
     fi
     echo "$MSG_USERNAME_INVALID" >&2
