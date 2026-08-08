@@ -16,12 +16,14 @@ from typing import Annotated
 import uvicorn
 import pymysql
 from pymysql.cursors import DictCursor
+from dotenv import load_dotenv
 from cryptography.fernet import Fernet
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 ROOT = Path(__file__).resolve().parent
+load_dotenv(ROOT / ".env")
 DATA = ROOT / "data"
 LOGS = ROOT / "logs"
 KEY_PATH = DATA / "secret.key"
