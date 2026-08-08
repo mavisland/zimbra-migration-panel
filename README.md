@@ -59,7 +59,8 @@ sudo bash setup.sh
 
 `setup.sh` ilk kurulumun tamamını yürütür:
 
-- Python 3.10+, `venv`, imapsync ve MySQL/MariaDB bileşenlerini denetler; eksikleri kurar.
+- Python 3.10+ ile `venv`/`pip` bileşenlerini denetler. Python eksik veya eskiyse otomatik kurulum yapmadan, sistem dili Türkçeyse Türkçe; diğer dillerde İngilizce örnek Ubuntu komutunu gösterip durur.
+- imapsync ve bağımsız MySQL/MariaDB bileşenlerini denetler; eksikleri kurar.
 - `/opt/zimbra-migration` dizini ile kısıtlı `zimbra-migrator` servis kullanıcısını oluşturur.
 - `zimbra_migration` veritabanını ve yalnızca bu veritabanında CRUD yetkili kullanıcıyı oluşturur.
 - Tek şema dosyası olan `migration_db.sql` dosyasını içe aktarır.
@@ -199,7 +200,8 @@ sudo bash setup.sh
 
 `setup.sh` performs the complete first-time installation:
 
-- Checks for Python 3.10+, `venv`, imapsync, and MySQL/MariaDB, installing only missing components.
+- Checks for Python 3.10+ and the `venv`/`pip` components. If Python is missing or outdated, it does not install Python automatically; it stops and prints an example Ubuntu command in Turkish when the system locale is Turkish, or in English otherwise.
+- Checks imapsync and the independent MySQL/MariaDB service, installing missing components.
 - Creates `/opt/zimbra-migration` and the restricted `zimbra-migrator` service account.
 - Creates the `zimbra_migration` database and a user limited to CRUD access on that database.
 - Imports the single schema file, `migration_db.sql`.

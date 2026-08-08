@@ -7,6 +7,52 @@ DB_NAME=zimbra_migration
 DB_USER=zimbra_migrator
 MIN_PYTHON_MINOR=10
 SOURCE_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# Ubuntu'nun sistem dilini tercih et; dosya yoksa mevcut oturum yerel ayarına dön.
+SYSTEM_LOCALE=""
+if [[ -r /etc/default/locale ]]; then
+  SYSTEM_LOCALE=$(sed -n 's/^LANG=["'"']\?\([^"'"']*\)["'"']\?$/\1/p' /etc/default/locale | head -n 1)
+fi
+SYSTEM_LOCALE=${SYSTEM_LOCALE:-${LC_ALL:-${LC_MESSAGES:-${LANG:-en}}}}
+IS_TURKISH=false
+if [[ ${SYSTEM_LOCALE,,} == tr* ]]; then
+  IS_TURKISH=true
+fi
+
+python_requirement_error() {
+  if [[ "$IS_TURKISH" == true ]]; then
+    echo "Python 3.${MIN_PYTHON_MINOR} veya üzeri gerekli; Python otomatik olarak kurulmayacaktır." >&2
+    echo "Güncel Ubuntu sürümlerinde örnek kurulum:" >&2
+  else
+    echo "Python 3.${MIN_PYTHON_MINOR} or newer is required; Python will not be installed automatically." >&2
+    echo "Example installation on current Ubuntu releases:" >&2
+  fi
+  echo "  sudo apt update" >&2
+  echo "  sudo apt install -y python3 python3-venv python3-pip" >&2
+  if [[ "$IS_TURKISH" == true ]]; then
+    echo "Kurulumdan sonra 'python3 --version' ile sürümü doğrulayıp setup.sh dosyasını yeniden çalıştırın." >&2
+  else
+    echo "After installation, verify the version with 'python3 --version' and run setup.sh again." >&2
+  fi
+  exit 1
+}
+
+python_venv_error() {
+  if [[ "$IS_TURKISH" == true ]]; then
+    echo "Python 3 bulundu ancak venv/pip bileşenleri eksik; bunlar otomatik olarak kurulmayacaktır." >&2
+    echo "Örnek kurulum:" >&2
+  else
+    echo "Python 3 is available, but the venv/pip components are missing; they will not be installed automatically." >&2
+    echo "Example installation:" >&2
+  fi
+  echo "  sudo apt update" >&2
+  echo "  sudo apt install -y python3-venv python3-pip" >&2
+  if [[ "$IS_TURKISH" == true ]]; then
+    echo "Kurulumdan sonra setup.sh dosyasını yeniden çalıştırın." >&2
+  else
+    echo "Run setup.sh again after installing the packages." >&2
+  fi
+  exit 1
+}
 
 if [[ ${EUID} -ne 0 ]]; then
   echo "Kurulumu sudo ile çalıştırın: sudo bash setup.sh" >&2
@@ -21,9 +67,10 @@ fi
 echo "[1/8] Sistem gereksinimleri denetleniyor..."
 NEEDED_PACKAGES=(rsync)
 if ! command -v python3 >/dev/null 2>&1 || ! python3 -c "import sys; raise SystemExit(sys.version_info < (3, ${MIN_PYTHON_MINOR}))"; then
-  NEEDED_PACKAGES+=(python3 python3-venv python3-pip)
-elif ! python3 -m venv --help >/dev/null 2>&1; then
-  NEEDED_PACKAGES+=(python3-venv python3-pip)
+  python_requirement_error
+fi
+if ! python3 -m venv --help >/dev/null 2>&1 || ! python3 -m pip --version >/dev/null 2>&1; then
+  python_venv_error
 fi
 
 # Zimbra'nın /opt/zimbra altındaki gömülü veritabanına dokunulmaz. Sistemde ayrı
@@ -36,10 +83,6 @@ fi
 
 apt-get update
 DEBIAN_FRONTEND=noninteractive apt-get install -y "${NEEDED_PACKAGES[@]}"
-if ! python3 -c "import sys; raise SystemExit(sys.version_info < (3, ${MIN_PYTHON_MINOR}))"; then
-  echo "Python 3.${MIN_PYTHON_MINOR} veya üzeri gerekli. Dağıtımınızın güncel Python paketini kurun." >&2
-  exit 1
-fi
 
 echo "[2/8] imapsync denetleniyor..."
 if command -v imapsync >/dev/null 2>&1; then
