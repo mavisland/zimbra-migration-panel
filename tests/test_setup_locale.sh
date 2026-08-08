@@ -21,10 +21,10 @@ grep -q 'CREATE USER IF NOT EXISTS' "$ROOT/setup.sh"
 grep -q 'HAS_EXISTING_CONFIG' "$ROOT/setup.sh"
 echo "Setup repeatability guards are present."
 
-for VALID_USERNAME in admin Raporzen2026 User123; do
+for VALID_USERNAME in admin Migration2026 User123; do
   bash "$ROOT/setup.sh" --validate-username "$VALID_USERNAME"
 done
-for INVALID_USERNAME in 'invalid user' 'Raporzen2026-' 'user.name' 'user_name' 'kullanıcı'; do
+for INVALID_USERNAME in 'invalid user' 'Migration2026-' 'user.name' 'user_name' 'kullanıcı'; do
   if bash "$ROOT/setup.sh" --validate-username "$INVALID_USERNAME"; then
     echo "Invalid username was accepted: $INVALID_USERNAME" >&2
     exit 1

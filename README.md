@@ -307,3 +307,5 @@ GitHub Actions validates the Python tests, JavaScript syntax, and Ubuntu install
 ## License
 
 Released under the [MIT License](LICENSE).
+
+Developed by **Tanju Yıldız**, 2026.
