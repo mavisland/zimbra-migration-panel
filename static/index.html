@@ -1,10 +1,10 @@
 <!doctype html>
 <html lang="tr">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Zimbra Göç Merkezi</title><link rel="stylesheet" href="/static/style.css"><link rel="stylesheet" href="/static/system.css"></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Zimbra Göç Merkezi</title><link rel="stylesheet" href="/static/style.css"><link rel="stylesheet" href="/static/system.css"><link rel="stylesheet" href="/static/icons.css"></head>
 <body>
   <aside class="sidebar">
-    <div class="brand"><span class="brand-icon">▰</span><span>GÖÇ MERKEZİ</span></div>
-    <nav><a class="active" href="#">▥ <span>Aktarım Paneli</span></a><a href="/api/reports/jobs.csv" download>⇩ <span>Raporları İndir</span></a><hr><button id="pauseAll">Ⅱ <span>İşlemi Duraklat</span></button><button class="danger" id="clearQueue">♲ <span>Kuyruğu Temizle</span></button><hr><button id="logout">↪ <span>Oturumu Kapat</span></button></nav>
+    <div class="brand"><span class="brand-icon"><svg class="icon" viewBox="0 0 24 24"><path d="M4 6h16v12H4zM4 8l8 5 8-5"/></svg></span><span>GÖÇ MERKEZİ</span></div>
+    <nav><a class="active" href="#"><svg class="icon" viewBox="0 0 24 24"><path d="M4 19V9m6 10V5m6 14v-7m4 7H2"/></svg><span>Aktarım Paneli</span></a><a href="/api/reports/jobs.csv" download><svg class="icon" viewBox="0 0 24 24"><path d="M12 3v12m-5-5 5 5 5-5M5 21h14"/></svg><span>Raporları İndir</span></a><hr><button id="pauseAll"><svg class="icon" viewBox="0 0 24 24"><path d="M8 5v14m8-14v14"/></svg><span>İşlemi Duraklat</span></button><button class="danger" id="clearQueue"><svg class="icon" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3m-9 0 1 14h10l1-14M10 11v6m4-6v6"/></svg><span>Kuyruğu Temizle</span></button><hr><button id="logout"><svg class="icon" viewBox="0 0 24 24"><path d="M10 5H4v14h6m4-4 4-3-4-3m4 3H9"/></svg><span>Oturumu Kapat</span></button></nav>
   </aside>
   <div class="shell">
     <header><h1>Göç Paneli</h1><div class="health" id="systemHealth"><i></i> Sistem kontrol ediliyor</div></header>
@@ -36,6 +36,6 @@
       </section>
     </main>
   </div>
-  <button class="to-top" onclick="scrollTo({top:0,behavior:'smooth'})">⌃</button>
-  <script src="/static/app.js"></script>
+  <button class="to-top" aria-label="Yukarı" onclick="scrollTo({top:0,behavior:'smooth'})"><svg class="icon" viewBox="0 0 24 24"><path d="m6 15 6-6 6 6"/></svg></button>
+  <script src="/static/i18n.js"></script><script src="/static/app.js"></script>
 </body></html>

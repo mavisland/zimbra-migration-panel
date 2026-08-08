@@ -599,10 +599,10 @@ def summary():
         row = conn.execute("""SELECT COALESCE(SUM(discovered),0) discovered,
             COALESCE(SUM(transferred),0) transferred, COALESCE(SUM(skipped),0) skipped,
             COUNT(*) total,
-            SUM(CASE WHEN status='running' THEN 1 ELSE 0 END) running,
-            SUM(CASE WHEN status='queued' THEN 1 ELSE 0 END) queued,
-            SUM(CASE WHEN status='completed' THEN 1 ELSE 0 END) completed,
-            SUM(CASE WHEN status IN ('failed','interrupted') THEN 1 ELSE 0 END) failed
+            COALESCE(SUM(CASE WHEN status='running' THEN 1 ELSE 0 END),0) running,
+            COALESCE(SUM(CASE WHEN status='queued' THEN 1 ELSE 0 END),0) queued,
+            COALESCE(SUM(CASE WHEN status='completed' THEN 1 ELSE 0 END),0) completed,
+            COALESCE(SUM(CASE WHEN status IN ('failed','interrupted') THEN 1 ELSE 0 END),0) failed
             FROM jobs""").fetchone()
     result = dict(row)
     result.update(max_parallel=MAX_PARALLEL, paused=manager.paused)

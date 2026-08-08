@@ -148,6 +148,7 @@ CSV UTF-8 olmalıdır. Varsayılan sınırlar 5 MiB ve 5.000 hesaptır. Tarihler
 - imapsync bulunamazsa yeni aktarım kabul edilmez.
 - `migration_db.sql` temiz kurulum için gereken bütün tabloları içeren tek şema dosyasıdır.
 - Kuyruğu duraklatma seçimi servis yeniden başlatıldığında korunur; parola içermeyen CSV raporu sol menüden indirilebilir. Dashboard son 500 işi gösterir, rapor bütün işleri içerir.
+- Arayüz tarayıcı dili `tr` ile başlıyorsa Türkçe, diğer bütün dillerde İngilizce gösterilir. Tahmini süre, çalışan işlerin geçen süre/aktarılan mesaj hızından hesaplanır; henüz mesaj sayısı keşfedilmemiş işler varken hesaplanıyor durumu gösterilir.
 
 Kuyruk yöneticisi uygulama içinde çalıştığından yalnızca tek Uvicorn worker kullanın. Güncelleme için yeni kodu aldıktan sonra `setup.sh` yeniden çalıştırılabilir; `migration_db.sql` dosyasını ise canlı veritabanına elle içe aktarmayın.
 
@@ -290,6 +291,7 @@ For the first attempt, use two test mailboxes rather than real users. Open the *
 - New migrations are rejected when imapsync is unavailable.
 - `migration_db.sql` is the only schema file required for a clean installation.
 - Queue pause state survives service restarts. A password-free CSV report is available from the sidebar. The dashboard shows the latest 500 jobs while the report contains every job.
+- The interface uses Turkish when the browser language starts with `tr`, and English for every other language. ETA is calculated from elapsed time per transferred message for running jobs; it remains in the calculating state while queued jobs have not discovered their message counts.
 
 Run exactly one Uvicorn worker because the queue manager lives inside the application process. After pulling updated code, `setup.sh` may be run again; do not manually import `migration_db.sql` into a live database.
 

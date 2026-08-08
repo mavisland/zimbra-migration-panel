@@ -30,4 +30,4 @@ jobs:
           bash -n setup.sh scripts/install-imapsync-ubuntu.sh scripts/locales/*.sh tests/test_setup_locale.sh
           bash tests/test_setup_locale.sh
       - name: Validate browser JavaScript
-        run: node --check static/app.js
+        run: node --check static/i18n.js && node --check static/app.js
