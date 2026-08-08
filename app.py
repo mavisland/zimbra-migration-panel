@@ -37,6 +37,7 @@ load_dotenv(ROOT / ".env")
 DATA = ROOT / "data"
 LOGS = ROOT / "logs"
 PIDS = DATA / "pids"
+IMAPSYNC_TMP = DATA / "tmp"
 KEY_PATH = DATA / "secret.key"
 MAX_PARALLEL = max(1, int(os.getenv("MAX_PARALLEL", "3")))
 CSV_MAX_BYTES = max(1024, int(os.getenv("CSV_MAX_BYTES", str(5 * 1024 * 1024))))
@@ -59,6 +60,7 @@ IMAPSYNC_STATUS_CACHE: dict = {"checked_at": 0.0, "value": None}
 DATA.mkdir(exist_ok=True)
 LOGS.mkdir(exist_ok=True)
 PIDS.mkdir(exist_ok=True)
+IMAPSYNC_TMP.mkdir(exist_ok=True)
 
 
 def now() -> datetime:
@@ -285,7 +287,7 @@ def test_connections(payload: dict) -> dict:
                "--user1", normalized["source_email"], "--passfile1", passfiles[0],
                "--host2", normalized["target_host"], "--port2", str(normalized["target_port"]),
                "--user2", normalized["target_email"], "--passfile2", passfiles[1],
-               "--justlogin", "--nolog", "--noreleasecheck"]
+               "--justlogin", "--nolog", "--noreleasecheck", "--tmpdir", str(IMAPSYNC_TMP)]
         append_security_args(cmd, normalized)
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=90,
                                 creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
@@ -373,7 +375,7 @@ class MigrationManager:
                "--host2", row["target_host"], "--port2", str(row["target_port"]),
                "--user2", row["target_email"], "--passfile2", pass2,
                "--automap", "--addheader", "--pidfile", str(pid_path),
-               "--pidfilelocking", "--nolog"]
+               "--pidfilelocking", "--nolog", "--tmpdir", str(IMAPSYNC_TMP)]
         append_security_args(cmd, row)
         search_terms = []
         if row["start_date"]:

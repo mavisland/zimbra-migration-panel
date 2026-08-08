@@ -143,6 +143,7 @@ CSV UTF-8 olmalıdır. Varsayılan sınırlar 5 MiB ve 5.000 hesaptır. Tarihler
 - Tamamlanan veya duran işlerin şifreli parolaları varsayılan olarak 24 saat sonra silinir. Süre `CREDENTIAL_RETENTION_HOURS` ile değiştirilebilir; sonrasında yeniden denemek için hesap tekrar eklenmelidir.
 - Aynı kaynak/hedef posta kutusu çifti eş zamanlı olarak ikinci kez başlatılamaz.
 - Her aktarım ayrı PID ve log dosyası kullanır; varsayılan paralellik üç hesaptır.
+- imapsync geçici dosyaları, systemd yazma sınırlarıyla uyumlu ve yalnızca servis kullanıcısına açık `/opt/zimbra-migration/data/tmp` dizininde tutulur.
 - İş, imapsync başarılı çıkış ve bütünlük özeti verdiğinde tamamlanmış sayılır.
 - Servis yeniden başlarsa yarım kalan işler `interrupted` olur ve yeniden denenebilir.
 - imapsync bulunamazsa yeni aktarım kabul edilmez.
@@ -298,6 +299,7 @@ For the first attempt, use two test mailboxes rather than real users. Open the *
 - Encrypted passwords for finished or stopped jobs are deleted after 24 hours by default. Configure `CREDENTIAL_RETENTION_HOURS` to change this period; after deletion, add the account again instead of retrying it.
 - The same source/target mailbox pair cannot run concurrently twice.
 - Each transfer has separate PID and log files; the default concurrency is three accounts.
+- imapsync temporary files are stored in `/opt/zimbra-migration/data/tmp`, which is compatible with the systemd write restrictions and accessible only to the service account.
 - A job completes only after a successful imapsync exit and integrity summary.
 - Jobs left in progress after a service restart become `interrupted` and can be retried.
 - New migrations are rejected when imapsync is unavailable.

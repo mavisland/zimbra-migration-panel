@@ -65,6 +65,7 @@ def test_imapsync_command_uses_passfiles_pid_lock_tls_and_date_filter(tmp_path):
     assert "--passfile1" in command and "old-secret" not in command
     assert "--passfile2" in command and "new-secret" not in command
     assert "--pidfilelocking" in command
+    assert command[command.index("--tmpdir") + 1] == str(app.IMAPSYNC_TMP)
     assert "--ssl1" in command and "--ssl2" in command
     assert command[command.index("--search1") + 1] == "SENTSINCE 01-Jan-2026 SENTBEFORE 01-Feb-2026"
 

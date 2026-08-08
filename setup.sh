@@ -97,7 +97,7 @@ echo "$MSG_STEP_FILES"
 if ! getent passwd "$APP_USER" >/dev/null; then
   useradd --system --home "$APP_DIR" --shell /usr/sbin/nologin "$APP_USER"
 fi
-mkdir -p "$APP_DIR" "$APP_DIR/data/pids" "$APP_DIR/logs"
+mkdir -p "$APP_DIR" "$APP_DIR/data/pids" "$APP_DIR/data/tmp" "$APP_DIR/logs"
 rsync -a --delete \
   --exclude='.git/' --exclude='.env' --exclude='.venv/' --exclude='data/' --exclude='logs/' \
   "$SOURCE_DIR/" "$APP_DIR/"
@@ -182,7 +182,7 @@ chown -R root:root "$APP_DIR"
 chown -R "$APP_USER:$APP_USER" "$APP_DIR/data" "$APP_DIR/logs"
 chown root:"$APP_USER" "$APP_DIR/.env"
 chmod 640 "$APP_DIR/.env"
-chmod 700 "$APP_DIR/data" "$APP_DIR/data/pids" "$APP_DIR/logs"
+chmod 700 "$APP_DIR/data" "$APP_DIR/data/pids" "$APP_DIR/data/tmp" "$APP_DIR/logs"
 cp "$APP_DIR/deploy/zimbra-migration.service" /etc/systemd/system/zimbra-migration.service
 
 echo "$MSG_STEP_SERVICE"
