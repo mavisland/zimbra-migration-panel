@@ -9,8 +9,9 @@ MIN_PYTHON_MINOR=8
 SOURCE_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # Prefer Ubuntu's system locale; fall back to the current session locale.
 SYSTEM_LOCALE=""
-if [[ -r /etc/default/locale ]]; then
-  SYSTEM_LOCALE=$(sed -n 's/^LANG=["'"']\?\([^"'"']*\)["'"']\?$/\1/p' /etc/default/locale | head -n 1)
+SYSTEM_LOCALE_FILE=${SYSTEM_LOCALE_FILE:-/etc/default/locale}
+if [[ -r "$SYSTEM_LOCALE_FILE" ]]; then
+  SYSTEM_LOCALE=$(sed -n 's/^LANG=//p' "$SYSTEM_LOCALE_FILE" | head -n 1 | tr -d "\"'")
 fi
 SYSTEM_LOCALE=${SYSTEM_LOCALE:-${LC_ALL:-${LC_MESSAGES:-${LANG:-en}}}}
 LANGUAGE_CODE=en
@@ -19,6 +20,11 @@ if [[ ${SYSTEM_LOCALE,,} == tr* ]]; then
 fi
 # shellcheck source=/dev/null
 source "$SOURCE_DIR/scripts/locales/setup.${LANGUAGE_CODE}.sh"
+
+if [[ ${1:-} == "--print-language" ]]; then
+  echo "$LANGUAGE_CODE"
+  exit 0
+fi
 
 python_requirement_error() {
   printf "$MSG_PYTHON_REQUIRED\n" "$MIN_PYTHON_MINOR" >&2
