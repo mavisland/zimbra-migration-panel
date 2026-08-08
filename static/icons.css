@@ -8,3 +8,7 @@
   stroke-linejoin: round;
   flex: 0 0 auto;
 }
+
+.notice {
+  white-space: pre-wrap;
+}

@@ -146,6 +146,7 @@ CSV UTF-8 olmalıdır. Varsayılan sınırlar 5 MiB ve 5.000 hesaptır. Tarihler
 - İş, imapsync başarılı çıkış ve bütünlük özeti verdiğinde tamamlanmış sayılır.
 - Servis yeniden başlarsa yarım kalan işler `interrupted` olur ve yeniden denenebilir.
 - imapsync bulunamazsa yeni aktarım kabul edilmez.
+- Bağlantı testi başarısız olduğunda panel, Perl çağrı zinciri yerine imapsync çıkış kodunu, sürümünü ve anlamlı hata satırlarını gösterir; geçici parola dosyası yolları maskelenir.
 - `migration_db.sql` temiz kurulum için gereken bütün tabloları içeren tek şema dosyasıdır.
 - Kuyruğu duraklatma seçimi servis yeniden başlatıldığında korunur; parola içermeyen CSV raporu sol menüden indirilebilir. Dashboard son 500 işi gösterir, rapor bütün işleri içerir.
 - Arayüz tarayıcı dili `tr` ile başlıyorsa Türkçe, diğer bütün dillerde İngilizce gösterilir. Tahmini süre, çalışan işlerin geçen süre/aktarılan mesaj hızından hesaplanır; henüz mesaj sayısı keşfedilmemiş işler varken hesaplanıyor durumu gösterilir.
@@ -300,6 +301,7 @@ For the first attempt, use two test mailboxes rather than real users. Open the *
 - A job completes only after a successful imapsync exit and integrity summary.
 - Jobs left in progress after a service restart become `interrupted` and can be retried.
 - New migrations are rejected when imapsync is unavailable.
+- When a connection test fails, the panel shows the imapsync exit code, version, and meaningful diagnostic lines instead of the Perl call stack; temporary password-file paths are masked.
 - `migration_db.sql` is the only schema file required for a clean installation.
 - Queue pause state survives service restarts. A password-free CSV report is available from the sidebar. The dashboard shows the latest 500 jobs while the report contains every job.
 - The interface uses Turkish when the browser language starts with `tr`, and English for every other language. ETA is calculated from elapsed time per transferred message for running jobs; it remains in the calculating state while queued jobs have not discovered their message counts.

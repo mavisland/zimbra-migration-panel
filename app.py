@@ -257,6 +257,20 @@ def public_job(row: dict) -> dict:
     return item
 
 
+def summarize_imapsync_failure(stdout: str, stderr: str, returncode: int, secret_paths=None) -> str:
+    text = "\n".join(part for part in (stdout, stderr) if part)
+    for secret_path in secret_paths or []:
+        text = text.replace(str(secret_path), "[PASSFILE]")
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    non_stack = [line for line in lines if not re.search(r"\bcalled at .+ line \d+\.?$", line, re.I)]
+    markers = re.compile(r"error|failure|failed|invalid|denied|certificate|authentication|can't|cannot|unable", re.I)
+    important = [line for line in non_stack if markers.search(line)]
+    selected = (important[-6:] if important else non_stack[-8:])
+    version = imapsync_status().get("version") or "unknown"
+    details = "\n".join(selected) if selected else "No diagnostic output was produced."
+    return f"imapsync exit code: {returncode} · version: {version}\n{details}"
+
+
 def test_connections(payload: dict) -> dict:
     normalized = validate_payload(payload)
     passfiles = []
@@ -276,8 +290,8 @@ def test_connections(payload: dict) -> dict:
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=90,
                                 creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
         if result.returncode:
-            output = (result.stdout + "\n" + result.stderr).strip().splitlines()
-            raise ValueError(output[-1] if output else f"imapsync çıkış kodu: {result.returncode}")
+            raise ValueError(summarize_imapsync_failure(
+                result.stdout, result.stderr, result.returncode, passfiles))
         return {"ok": True, "message": "Kaynak ve hedef IMAP oturumları doğrulandı"}
     except subprocess.TimeoutExpired as exc:
         raise ValueError("IMAP bağlantı testi 90 saniyede tamamlanamadı") from exc

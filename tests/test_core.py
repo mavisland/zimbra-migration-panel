@@ -94,3 +94,17 @@ def test_password_prompt_retries_after_blank_input(monkeypatch, capsys):
 
     assert encoded.startswith("$scrypt$")
     assert "cannot be empty" in capsys.readouterr().err
+
+
+def test_imapsync_failure_summary_keeps_root_error_and_hides_stack_and_passfile(monkeypatch):
+    monkeypatch.setattr(app, "imapsync_status", lambda: {"version": "2.314"})
+    output = "Authentication failed for user\nmain::single_sync(HASH(0x1)) called at /usr/local/bin/imapsync line 1385\n"
+
+    summary = app.summarize_imapsync_failure(
+        output, "Error reading passfile /tmp/secret.pass", 16, ["/tmp/secret.pass"])
+
+    assert "Authentication failed" in summary
+    assert "called at" not in summary
+    assert "/tmp/secret.pass" not in summary
+    assert "[PASSFILE]" in summary
+    assert "exit code: 16" in summary
