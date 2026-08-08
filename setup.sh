@@ -132,12 +132,15 @@ if [[ "$HAS_EXISTING_CONFIG" == true ]]; then
   echo "$MSG_CREDENTIALS_PRESERVED"
   PANEL_USER=$(sed -n 's/^APP_USERNAME=//p' "$APP_DIR/.env" | head -n 1 | tr -d "\"'")
 else
-  read -r -p "$MSG_USERNAME_PROMPT" PANEL_USER
-  PANEL_USER=${PANEL_USER:-admin}
-  if [[ ! "$PANEL_USER" =~ ^[A-Za-z0-9._-]+$ ]]; then
+  while true; do
+    read -r -p "$MSG_USERNAME_PROMPT" PANEL_USER
+    PANEL_USER=$(printf '%s' "$PANEL_USER" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+    PANEL_USER=${PANEL_USER:-admin}
+    if [[ "$PANEL_USER" =~ ^[A-Za-z0-9._-]+$ ]]; then
+      break
+    fi
     echo "$MSG_USERNAME_INVALID" >&2
-    exit 1
-  fi
+  done
   PANEL_HASH=$(INSTALL_LANGUAGE="$LANGUAGE_CODE" "$APP_DIR/.venv/bin/python" "$APP_DIR/scripts/hash-password.py")
   SESSION_SECRET=$(python3 -c 'import secrets; print(secrets.token_urlsafe(48))')
 

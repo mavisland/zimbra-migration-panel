@@ -1,12 +1,20 @@
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import time
 from datetime import date
+from pathlib import Path
 
 import pytest
 
 import app
+
+HASH_PASSWORD_PATH = Path(__file__).resolve().parents[1] / "scripts" / "hash-password.py"
+HASH_PASSWORD_SPEC = importlib.util.spec_from_file_location("hash_password", HASH_PASSWORD_PATH)
+assert HASH_PASSWORD_SPEC and HASH_PASSWORD_SPEC.loader
+hash_password = importlib.util.module_from_spec(HASH_PASSWORD_SPEC)
+HASH_PASSWORD_SPEC.loader.exec_module(hash_password)
 
 
 def payload(**overrides):
@@ -76,3 +84,13 @@ def test_public_job_never_exposes_encrypted_passwords():
     assert result["credentials_available"] is True
     assert "source_password" not in result
     assert "target_password" not in result
+
+
+def test_password_prompt_retries_after_blank_input(monkeypatch, capsys):
+    answers = iter(["", "valid-password-123", "valid-password-123"])
+    monkeypatch.setattr(hash_password.getpass, "getpass", lambda _prompt: next(answers))
+
+    encoded = hash_password.generate_password_hash("en")
+
+    assert encoded.startswith("$scrypt$")
+    assert "cannot be empty" in capsys.readouterr().err
