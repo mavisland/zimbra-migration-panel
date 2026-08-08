@@ -51,9 +51,12 @@ Mevcut bir kurulum yükseltiliyorsa yeni başlangıç şeması yeniden çalışt
 
 ```bash
 mysql -h 127.0.0.1 -u zimbra_migrator -p zimbra_migration < migrations/001_active_job_lock.sql
+mysql -h 127.0.0.1 -u zimbra_migrator -p zimbra_migration < migrations/002_transfer_verification.sql
 ```
 
 `active_lock` alanındaki benzersiz indeks, aynı kaynak ve hedef mailbox çiftinin aynı anda iki kez kuyruğa alınmasını engeller. Tamamlanan, durdurulan veya hatalı işlerde kilit kaldırılır; böylece hesap daha sonra yeniden çalıştırılabilir.
+
+Dashboard, imapsync'in her başarılı `msg ... copied to ...` satırından aktarılan ileti ve byte sayaçlarını en fazla saniyede bir günceller. İş ancak süreç sıfır koduyla sonlandığında, `Detected 0 errors`, `There is no unidentified message` ve başarılı bütünlük özeti görüldüğünde tamamlanmış sayılır. Bu doğrulamalardan biri eksikse iş loguyla birlikte hatalı duruma alınır.
 
 `IMAPSYNC_PATH` değerini Ubuntu üzerindeki imapsync çalıştırılabilir dosyasına göre düzenleyin. Kurulumdan sonra yolu doğrulayın:
 

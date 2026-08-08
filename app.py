@@ -10,6 +10,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -269,6 +270,10 @@ class MigrationManager:
             with db() as conn:
                 conn.execute("UPDATE jobs SET status='running', log_path=? WHERE id=?", (str(log_path), job_id))
             with log_path.open("w", encoding="utf-8", errors="replace") as logfile:
+                progress_state = {"transferred": 0, "skipped": 0, "bytes_transferred": 0,
+                                  "discovered": 0, "last_flush": 0.0, "sync_good": False,
+                                  "unidentified_ok": False, "detected_errors": None,
+                                  "exited_ok": False}
                 process = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.STDOUT, creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
                 self.running[job_id] = process
@@ -279,18 +284,24 @@ class MigrationManager:
                     line = raw.decode(errors="replace")
                     logfile.write(line)
                     logfile.flush()
-                    self.parse_progress(job_id, line)
+                    self.parse_progress(job_id, line, progress_state)
                 code = await process.wait()
+                self.flush_progress(job_id, progress_state, force=True)
             with db() as conn:
                 current = conn.execute("SELECT status FROM jobs WHERE id=?", (job_id,)).fetchone()["status"]
                 if current == "stopping":
                     conn.execute("UPDATE jobs SET status='stopped', active_lock=NULL, finished_at=?, pid=NULL WHERE id=?", (now(), job_id))
                 elif current == "interrupted":
                     conn.execute("UPDATE jobs SET active_lock=NULL, finished_at=?, pid=NULL WHERE id=?", (now(), job_id))
-                elif code == 0:
-                    conn.execute("UPDATE jobs SET status='completed', active_lock=NULL, progress=100, finished_at=?, pid=NULL WHERE id=?", (now(), job_id))
+                elif code == 0 and self.sync_verified(progress_state):
+                    conn.execute("""UPDATE jobs SET status='completed', active_lock=NULL, verified=1,
+                        detected_errors=0, progress=100, finished_at=?, pid=NULL WHERE id=?""", (now(), job_id))
                 else:
-                    conn.execute("UPDATE jobs SET status='failed', active_lock=NULL, error=?, finished_at=?, pid=NULL WHERE id=?", (f"imapsync çıkış kodu: {code}", now(), job_id))
+                    detected = progress_state.get("detected_errors")
+                    reason = f"imapsync çıkış kodu: {code}" if code else "imapsync tamamlandı ancak bütünlük doğrulaması başarısız"
+                    conn.execute("""UPDATE jobs SET status='failed', active_lock=NULL, verified=0,
+                        detected_errors=?, error=?, finished_at=?, pid=NULL WHERE id=?""",
+                        (detected, reason, now(), job_id))
         except Exception as exc:
             with db() as conn:
                 conn.execute("UPDATE jobs SET status='failed', active_lock=NULL, error=?, finished_at=?, pid=NULL WHERE id=?", (str(exc), now(), job_id))
@@ -301,27 +312,50 @@ class MigrationManager:
             pid_path.unlink(missing_ok=True)
             self.wakeup.set()
 
-    def parse_progress(self, job_id: int, line: str) -> None:
-        fields = {}
+    @staticmethod
+    def sync_verified(state: dict) -> bool:
+        content_ok = state["sync_good"] or state["discovered"] == 0
+        return bool(state["exited_ok"] and content_ok and state["unidentified_ok"]
+                    and state["detected_errors"] == 0)
+
+    def parse_progress(self, job_id: int, line: str, state: dict) -> None:
+        copied = re.search(r"^msg .*\{(\d+)\}\s+copied to ", line, re.I)
+        if copied:
+            state["transferred"] += 1
+            state["bytes_transferred"] += int(copied.group(1))
         patterns = {
-            "discovered": r"Messages found in host1\s*:\s*(\d+)",
-            "transferred": r"Messages transferred\s*:\s*(\d+)",
-            "skipped": r"Messages skipped\s*:\s*(\d+)",
-            "bytes_transferred": r"Total bytes transferred\s*:\s*(\d+)",
+            "discovered": r"^Host1 Nb messages:\s*(\d+) messages",
+            "transferred": r"^Messages transferred\s*:\s*(\d+)",
+            "skipped": r"^Messages skipped\s*:\s*(\d+)",
+            "bytes_transferred": r"^Total bytes transferred\s*:\s*(\d+)",
         }
         for field, pattern in patterns.items():
             match = re.search(pattern, line, re.I)
             if match:
-                fields[field] = int(match.group(1))
-        if not fields:
+                state[field] = int(match.group(1))
+        if re.search(r"^The sync looks good, all \d+ identified messages in host1 are on host2", line):
+            state["sync_good"] = True
+        if line.startswith("There is no unidentified message on host1."):
+            state["unidentified_ok"] = True
+        detected = re.search(r"^Detected (\d+) errors", line)
+        if detected:
+            state["detected_errors"] = int(detected.group(1))
+        if re.search(r"^Exiting with return value 0 .*EX_OK", line):
+            state["exited_ok"] = True
+        self.flush_progress(job_id, state)
+
+    def flush_progress(self, job_id: int, state: dict, force: bool = False) -> None:
+        current_time = time.monotonic()
+        if not force and current_time - state["last_flush"] < 1:
             return
+        state["last_flush"] = current_time
+        discovered = state["discovered"]
+        progress = min(99, round(state["transferred"] * 100 / discovered)) if discovered else 0
         with db() as conn:
-            row = conn.execute("SELECT discovered,transferred FROM jobs WHERE id=?", (job_id,)).fetchone()
-            discovered = fields.get("discovered", row["discovered"])
-            transferred = fields.get("transferred", row["transferred"])
-            fields["progress"] = min(99, round(transferred * 100 / discovered)) if discovered else 0
-            sets = ",".join(f"{key}=?" for key in fields)
-            conn.execute(f"UPDATE jobs SET {sets} WHERE id=?", (*fields.values(), job_id))
+            conn.execute("""UPDATE jobs SET discovered=?,transferred=?,skipped=?,
+                bytes_transferred=?,progress=?,detected_errors=? WHERE id=?""",
+                (discovered, state["transferred"], state["skipped"],
+                 state["bytes_transferred"], progress, state["detected_errors"], job_id))
 
     async def stop(self, job_id: int) -> None:
         process = self.running.get(job_id)
@@ -447,7 +481,8 @@ def retry_job(job_id: int):
             raise HTTPException(409, "Çalışan aktarım yeniden başlatılamaz")
         try:
             conn.execute("""UPDATE jobs SET status='queued',active_lock=lock_key,error=NULL,
-                progress=0,started_at=NULL,finished_at=NULL WHERE id=?""", (job_id,))
+                progress=0,discovered=0,transferred=0,skipped=0,bytes_transferred=0,
+                verified=0,detected_errors=NULL,started_at=NULL,finished_at=NULL WHERE id=?""", (job_id,))
         except pymysql.err.IntegrityError as exc:
             raise HTTPException(409, "Bu hesap için başka bir aktif aktarım var") from exc
     manager.wakeup.set()
