@@ -35,24 +35,49 @@ cp .env.example .env
 
 Arayüz: `http://127.0.0.1:8787`
 
-Önce bir MySQL veritabanı ve yalnızca bu veritabanına yetkili kullanıcı oluşturun:
+### MySQL veritabanı ve uygulama kullanıcısı
+
+Zimbra'nın kendi dahili MariaDB/MySQL veritabanını kullanmayın. Ayrı bir MySQL 8 sunucusu veya mevcut bağımsız MySQL hizmeti kullanın. Aynı Ubuntu sunucusuna kurulacaksa:
+
+```bash
+sudo apt update
+sudo apt install -y mysql-server default-mysql-client
+sudo systemctl enable --now mysql
+sudo mysql
+```
+
+MySQL konsolunda veritabanını ve çalışma zamanı kullanıcısını oluşturun. Örnek parolayı güçlü ve benzersiz bir değerle değiştirin:
 
 ```sql
-CREATE DATABASE zimbra_migration CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE DATABASE zimbra_migration
+    CHARACTER SET utf8mb4
+    COLLATE utf8mb4_unicode_ci;
+
+CREATE USER 'zimbra_migrator'@'127.0.0.1'
+    IDENTIFIED BY 'guclu-ve-benzersiz-bir-parola';
+
+GRANT SELECT, INSERT, UPDATE, DELETE
+    ON zimbra_migration.*
+    TO 'zimbra_migrator'@'127.0.0.1';
+
+FLUSH PRIVILEGES;
+EXIT;
 ```
 
-Ardından uygulama şemasını bir defa içe aktarın. Uygulama kendi başına tablo oluşturmaz veya şema değiştirmez:
+Başlangıç şemasını yönetici hesabıyla bir kez içe aktarın. Uygulama çalışma anında tablo oluşturmaz veya şema değiştirmez:
 
 ```bash
-mysql -u root -p zimbra_migration < migration_db.sql
+sudo mysql zimbra_migration < migration_db.sql
 ```
 
-Mevcut bir kurulum yükseltiliyorsa yeni başlangıç şeması yeniden çalıştırılmaz. Sıralı migration dosyalarını bir kez uygulayın:
+Uygulama kullanıcısının bağlantısını test edin:
 
 ```bash
-mysql -h 127.0.0.1 -u zimbra_migrator -p zimbra_migration < migrations/001_active_job_lock.sql
-mysql -h 127.0.0.1 -u zimbra_migrator -p zimbra_migration < migrations/002_transfer_verification.sql
+mysql -h 127.0.0.1 -u zimbra_migrator -p \
+  -e "SELECT COUNT(*) AS job_count FROM zimbra_migration.jobs;"
 ```
+
+MySQL farklı bir sunucudaysa kullanıcı host bölümünü Zimbra sunucusunun özel IP adresiyle sınırlandırın; `%` kullanmayın. MySQL firewall portunu da yalnızca Zimbra sunucusunun IP adresine açın.
 
 `active_lock` alanındaki benzersiz indeks, aynı kaynak ve hedef mailbox çiftinin aynı anda iki kez kuyruğa alınmasını engeller. Tamamlanan, durdurulan veya hatalı işlerde kilit kaldırılır; böylece hesap daha sonra yeniden çalıştırılabilir.
 
@@ -71,24 +96,23 @@ Ubuntu sürümünüze uygun imapsync kurulumu için projenin resmi `INSTALL.Ubun
 
 ### 1. MySQL hazırlığı
 
-MySQL sunucunuzda uygulamaya özel veritabanı ve kullanıcı oluşturun. Zimbra'nın kendi dahili veritabanını kullanmayın:
-
-```sql
-CREATE DATABASE zimbra_migration CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-CREATE USER 'zimbra_migrator'@'127.0.0.1' IDENTIFIED BY 'guclu-bir-parola';
-GRANT ALL PRIVILEGES ON zimbra_migration.* TO 'zimbra_migrator'@'127.0.0.1';
-FLUSH PRIVILEGES;
-```
-
-Şemayı içe aktarın:
+Yukarıdaki **MySQL veritabanı ve uygulama kullanıcısı** adımlarını tamamlayın. Bütün güncel tablo yapısı tek bir `migration_db.sql` dosyasındadır ve temiz kurulumda yalnızca bir kez içe aktarılır:
 
 ```bash
-mysql -h 127.0.0.1 -u zimbra_migrator -p zimbra_migration < migration_db.sql
+sudo mysql zimbra_migration < migration_db.sql
 ```
 
 ### 2. Ortam ayarları
 
-`.env` dosyasını düzenleyin:
+Önce parola özeti ve oturum sırrı üretin:
+
+```bash
+source .venv/bin/activate
+python scripts/hash-password.py
+python -c 'import secrets; print(secrets.token_urlsafe(48))'
+```
+
+`.env` dosyasını düzenleyip bu iki çıktıyı ilgili alanlara yazın:
 
 ```dotenv
 IMAPSYNC_PATH=/usr/local/bin/imapsync
@@ -97,6 +121,12 @@ CSV_MAX_BYTES=5242880
 CSV_MAX_ROWS=5000
 APP_HOST=127.0.0.1
 APP_PORT=8787
+APP_USERNAME=admin
+APP_PASSWORD_HASH=$scrypt$...
+SESSION_SECRET=en-az-32-karakter-rastgele-deger
+SESSION_HTTPS_ONLY=false
+ALLOWED_HOSTS=127.0.0.1,localhost
+IMAPSYNC_SSL_VERIFY=true
 MYSQL_HOST=127.0.0.1
 MYSQL_PORT=3306
 MYSQL_DATABASE=zimbra_migration
@@ -119,13 +149,13 @@ Aynı Ubuntu makinesindeki tarayıcıdan `http://127.0.0.1:8787` adresini açın
 ssh -L 8787:127.0.0.1:8787 kullanici@zimbra-sunucusu
 ```
 
-Ardından kendi tarayıcınızda `http://127.0.0.1:8787` adresine gidin. API ve MySQL bağlantısını terminalden de kontrol edebilirsiniz:
+Ardından kendi tarayıcınızda `http://127.0.0.1:8787` adresine gidip oluşturduğunuz kullanıcıyla oturum açın. Web servisinin cevap verdiğini terminalden kontrol edebilirsiniz:
 
 ```bash
-curl http://127.0.0.1:8787/api/summary
+curl -I http://127.0.0.1:8787/login
 ```
 
-JSON yanıtı alıyorsanız web uygulaması ve MySQL bağlantısı çalışıyor demektir.
+`HTTP/1.1 200 OK` yanıtı alıyorsanız web servisi çalışıyor demektir. MySQL bağlantısı uygulama başlangıcında doğrulanır; bağlantı kurulamazsa servis başlamaz.
 
 ### 4. Gerçek aktarımı kontrollü test etme
 
@@ -161,25 +191,36 @@ Tarih alanları isteğe bağlıdır ve `YYYY-MM-DD` biçimindedir. CSV yalnızca
 - Web sunucusu varsayılan olarak yalnızca `127.0.0.1` üzerinde dinler.
 - Parolalar MySQL içinde Fernet ile şifrelenir; anahtar `data/secret.key` dosyasındadır.
 - imapsync parolaları işlem argümanlarına koyulmaz; aktarım süresince izinleri kısıtlanmış geçici passfile kullanılır.
-- Paneli ağ üzerinde yayınlamadan önce kimlik doğrulama ve HTTPS ekleyin.
+- Panel, scrypt parola özeti kullanan uygulama oturumu ve tüm durum değiştiren API çağrılarında CSRF kontrolü uygular.
+- `ALLOWED_HOSTS` dışındaki Host başlıkları reddedilir.
+- imapsync TLS bağlantılarında sertifika zinciri ve sunucu adı doğrulaması varsayılan olarak açıktır.
 
 ## Zimbra sunucusunda yayınlama
 
-Uygulamayı doğrudan internete açmayın. Uvicorn yalnızca `127.0.0.1:8787` üzerinde çalışmalı; tarayıcı erişimi TLS ve kimlik doğrulamalı bir ters vekil üzerinden sağlanmalıdır.
+Bu kurulum Nginx kullanmaz. Uvicorn doğrudan systemd tarafından çalıştırılır. Önerilen erişim sırası:
 
-### Nginx zorunlu mu?
+1. SSH tüneli üzerinden `127.0.0.1` — test ve az sayıda yönetici için en güvenli yöntem.
+2. VPN veya özel yönetim ağı — UFW ile yalnızca yönetici IP'lerine açık.
+3. Doğrudan Uvicorn TLS — sertifika ve özel anahtar uygulamaya tanımlanır.
 
-Hayır. Nginx uygulamanın çalışması için zorunlu değildir. Tercih sırası şöyledir:
+Önce panel parolası ve oturum sırrı oluşturun:
 
-1. **SSH tüneli:** En kolay ve güvenli test yöntemidir. Uygulama yalnızca `127.0.0.1` üzerinde kalır.
-2. **VPN veya özel yönetim ağı:** Uvicorn özel ağ adresinde yayınlanabilir ve firewall ile yalnızca yönetici IP'lerine açılabilir.
-3. **Nginx/reverse proxy:** İnternet üzerinden erişim gerekiyorsa TLS, Basic Auth, erişim logları ve IP kısıtlama için önerilir.
+```bash
+source .venv/bin/activate
+python scripts/hash-password.py
+python -c 'import secrets; print(secrets.token_urlsafe(48))'
+```
 
-Nginx olmadan özel ağda yayınlamak için `.env` içinde:
+Çıktıları `.env` dosyasına yazın. Özel ağ örneği:
 
 ```dotenv
 APP_HOST=0.0.0.0
 APP_PORT=8787
+APP_USERNAME=admin
+APP_PASSWORD_HASH=$scrypt$...
+SESSION_SECRET=en-az-32-karakter-rastgele-deger
+SESSION_HTTPS_ONLY=false
+ALLOWED_HOSTS=192.168.10.20,migration.example.com
 ```
 
 Ardından uygulamayı başlatın:
@@ -196,9 +237,17 @@ sudo ufw allow from 192.168.10.50 to any port 8787 proto tcp
 sudo ufw status
 ```
 
-Tarayıcıdan `http://ZIMBRA_SUNUCU_IP:8787` adresine erişebilirsiniz. Bu bağlantı HTTP'dir; ağdaki trafik şifrelenmez. Bu nedenle yalnızca güvenilir LAN/VPN ortamında kullanılmalıdır.
+Tarayıcıdan `http://ZIMBRA_SUNUCU_IP:8787` adresine erişebilirsiniz. HTTP yalnızca güvenilir LAN/VPN üzerinde kullanılmalıdır.
 
-> Uvicorn'u `0.0.0.0` üzerinde açıp 8787 portunu doğrudan internete yönlendirmeyin. Mevcut sürümde uygulama seviyesinde oturum açma bulunmadığından paneli gören kişi kayıtlı aktarım süreçlerini yönetebilir. İnternet erişimi için Nginx veya başka bir reverse proxy üzerinden HTTPS ve kimlik doğrulama kullanın.
+Doğrudan HTTPS için sertifika dosyalarını uygulama servis kullanıcısının okuyabildiği güvenli bir dizine yerleştirip aşağıdaki ayarları kullanın:
+
+```dotenv
+SESSION_HTTPS_ONLY=true
+TLS_CERTFILE=/opt/zimbra-migration/certs/fullchain.pem
+TLS_KEYFILE=/opt/zimbra-migration/certs/privkey.pem
+```
+
+Bu durumda adres `https://ZIMBRA_SUNUCU_IP:8787` olur. Sertifikadaki alan adıyla erişin. 8787 portunu yine yalnızca yönetici IP'lerine açın; uygulamayı genel internete yayınlamayın.
 
 ### 1. Servis kullanıcısı ve dosyalar
 
@@ -225,25 +274,9 @@ sudo systemctl enable --now zimbra-migration
 sudo systemctl status zimbra-migration
 ```
 
-Güvenlik nedeniyle örnek servis tek Uvicorn worker kullanır. Kuyruk yöneticisi uygulama içi olduğundan birden fazla web worker aynı aktarımı başlatabilir.
+Güvenlik nedeniyle örnek servis `app.py` üzerinden tek Uvicorn worker kullanır. Kuyruk yöneticisi uygulama içi olduğundan birden fazla web worker çalıştırmayın.
 
 Her aktarım kendine ait `data/pids/job-ID.pid` dosyasını kullanır. Böylece `--pidfilelocking`, üç paralel imapsync sürecinin birbirini engellemesine neden olmaz. Uygulama başlangıçta yarım kalmış `starting`, `running` ve `stopping` kayıtlarını `interrupted` durumuna alır; artık geçici parola ve PID dosyalarını temizler.
-
-### 3. Nginx, TLS ve parola koruması
-
-Örnek yapılandırma: [`deploy/nginx-zimbra-migration.conf`](deploy/nginx-zimbra-migration.conf)
-
-```bash
-sudo apt install apache2-utils
-sudo htpasswd -c /etc/nginx/.htpasswd-zimbra-migration paneladmin
-sudo cp deploy/nginx-zimbra-migration.conf /etc/nginx/conf.d/zimbra-migration.conf
-sudo nginx -t
-sudo systemctl reload nginx
-```
-
-`migration.example.com` ve sertifika yollarını kendi alan adınıza göre değiştirin. Mümkünse ayrıca firewall/VPN üzerinden yönetici IP'leriyle sınırlayın.
-
-> **Zimbra Proxy uyarısı:** Zimbra'nın kendi Nginx proxy servisi 80/443 portlarını kullanıyorsa ikinci bir sistem Nginx'i aynı portlarda başlatamazsınız. Zimbra tarafından üretilen Nginx dosyalarını elle değiştirmek güncelleme veya servis yeniden yapılandırmasında kaybolabilir. Bu durumda önerilen kurulum, `migration.example.com` ters vekilini ayrı bir yönetim/reverse-proxy sunucusunda çalıştırıp `127.0.0.1:8787` yerine yalnızca özel ağdan erişilebilen Zimbra sunucusu adresine yönlendirmektir. Alternatif olarak paneli VPN/SSH tüneli üzerinden lokal portta kullanın.
 
 SSH tüneli alternatifi:
 

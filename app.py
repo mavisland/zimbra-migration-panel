@@ -3,11 +3,13 @@ from __future__ import annotations
 import asyncio
 import csv
 import hashlib
+import hmac
 import io
 import json
 import os
 import re
 import shutil
+import secrets
 import subprocess
 import tempfile
 import time
@@ -21,9 +23,12 @@ import pymysql
 from pymysql.cursors import DictCursor
 from dotenv import load_dotenv
 from cryptography.fernet import Fernet
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.sessions import SessionMiddleware
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 ROOT = Path(__file__).resolve().parent
 load_dotenv(ROOT / ".env")
@@ -35,6 +40,14 @@ MAX_PARALLEL = max(1, int(os.getenv("MAX_PARALLEL", "3")))
 CSV_MAX_BYTES = max(1024, int(os.getenv("CSV_MAX_BYTES", str(5 * 1024 * 1024))))
 CSV_MAX_ROWS = max(1, int(os.getenv("CSV_MAX_ROWS", "5000")))
 IMAPSYNC_PATH = os.getenv("IMAPSYNC_PATH", "imapsync")
+IMAPSYNC_SSL_VERIFY = os.getenv("IMAPSYNC_SSL_VERIFY", "true").lower() in {"1", "true", "yes"}
+APP_USERNAME = os.getenv("APP_USERNAME", "admin")
+APP_PASSWORD_HASH = os.getenv("APP_PASSWORD_HASH", "")
+SESSION_SECRET = os.getenv("SESSION_SECRET", "")
+SESSION_HTTPS_ONLY = os.getenv("SESSION_HTTPS_ONLY", "false").lower() in {"1", "true", "yes"}
+ALLOWED_HOSTS = [host.strip() for host in os.getenv("ALLOWED_HOSTS", "127.0.0.1,localhost").split(",") if host.strip()]
+TLS_CERTFILE = os.getenv("TLS_CERTFILE", "").strip() or None
+TLS_KEYFILE = os.getenv("TLS_KEYFILE", "").strip() or None
 CSV_REQUIRED_FIELDS = {"source_host", "source_port", "source_security", "source_email",
                        "source_password", "target_host", "target_port", "target_security",
                        "target_email", "target_password", "start_date", "end_date"}
@@ -147,6 +160,32 @@ def clean_security(value: str) -> str:
     return value
 
 
+def verify_password(password: str, encoded: str) -> bool:
+    try:
+        marker, algorithm, n, r, p, salt_hex, digest_hex = encoded.split("$")
+        if marker or algorithm != "scrypt":
+            return False
+        actual = hashlib.scrypt(password.encode(), salt=bytes.fromhex(salt_hex),
+                                n=int(n), r=int(r), p=int(p), dklen=32).hex()
+        return hmac.compare_digest(actual, digest_hex)
+    except (ValueError, TypeError):
+        return False
+
+
+def append_security_args(cmd: list[str], normalized: dict) -> None:
+    for side, prefix in ((1, "source"), (2, "target")):
+        security = normalized[f"{prefix}_security"]
+        if security == "ssl":
+            cmd.append(f"--ssl{side}")
+        elif security == "tls":
+            cmd.append(f"--tls{side}")
+        else:
+            cmd += [f"--nossl{side}", f"--notls{side}"]
+        if security != "none" and IMAPSYNC_SSL_VERIFY:
+            cmd += [f"--sslargs{side}", "SSL_verify_mode=1",
+                    f"--sslargs{side}", f"SSL_verifycn_name={normalized[f'{prefix}_host']}"]
+
+
 def validate_payload(payload: dict) -> dict:
     required = ["source_host", "source_email", "source_password", "target_host", "target_email", "target_password"]
     if any(not str(payload.get(key, "")).strip() for key in required):
@@ -228,10 +267,7 @@ def test_connections(payload: dict) -> dict:
                "--host2", normalized["target_host"], "--port2", str(normalized["target_port"]),
                "--user2", normalized["target_email"], "--passfile2", passfiles[1],
                "--justlogin", "--nolog", "--noreleasecheck"]
-        for side, prefix in ((1, "source"), (2, "target")):
-            security = normalized[f"{prefix}_security"]
-            if security == "ssl": cmd.append(f"--ssl{side}")
-            elif security == "tls": cmd.append(f"--tls{side}")
+        append_security_args(cmd, normalized)
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=90,
                                 creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
         if result.returncode:
@@ -304,10 +340,7 @@ class MigrationManager:
                "--user2", row["target_email"], "--passfile2", pass2,
                "--automap", "--addheader", "--pidfile", str(pid_path),
                "--pidfilelocking", "--nolog"]
-        for side in (1, 2):
-            security = row[f"{'source' if side == 1 else 'target'}_security"]
-            if security == "ssl": cmd.append(f"--ssl{side}")
-            elif security == "tls": cmd.append(f"--tls{side}")
+        append_security_args(cmd, row)
         search_terms = []
         if row["start_date"]:
             search_terms.append(f"SENTSINCE {row['start_date'].strftime('%d-%b-%Y')}")
@@ -445,8 +478,30 @@ class MigrationManager:
 manager = MigrationManager()
 
 
+class AuthCSRFMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        if request.url.path == "/login" or request.url.path.startswith("/static/"):
+            return await call_next(request)
+        if not request.session.get("authenticated"):
+            if request.url.path.startswith("/api/"):
+                return JSONResponse({"detail": "Oturum açmanız gerekiyor"}, status_code=401)
+            return RedirectResponse("/login", status_code=303)
+        if request.method not in {"GET", "HEAD", "OPTIONS"}:
+            supplied = request.headers.get("x-csrf-token", "")
+            expected = request.session.get("csrf_token", "")
+            if not expected or not hmac.compare_digest(supplied, expected):
+                return JSONResponse({"detail": "Geçersiz CSRF belirteci"}, status_code=403)
+        return await call_next(request)
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    if len(SESSION_SECRET) < 32:
+        raise RuntimeError("SESSION_SECRET en az 32 karakter olmalıdır")
+    if not APP_PASSWORD_HASH:
+        raise RuntimeError("APP_PASSWORD_HASH yapılandırılmalıdır")
+    if bool(TLS_CERTFILE) != bool(TLS_KEYFILE):
+        raise RuntimeError("TLS_CERTFILE ve TLS_KEYFILE birlikte yapılandırılmalıdır")
     init_db()
     await manager.start()
     yield
@@ -454,7 +509,37 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="Zimbra IMAP Aktarım Paneli", lifespan=lifespan)
+app.add_middleware(AuthCSRFMiddleware)
+app.add_middleware(SessionMiddleware, secret_key=SESSION_SECRET,
+                   session_cookie="zimbra_migration_session", same_site="strict",
+                   https_only=SESSION_HTTPS_ONLY, max_age=8 * 60 * 60)
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=ALLOWED_HOSTS or ["localhost"])
 app.mount("/static", StaticFiles(directory=ROOT / "static"), name="static")
+
+
+@app.get("/login")
+def login_page():
+    return FileResponse(ROOT / "static" / "login.html")
+
+
+@app.post("/login")
+async def login(request: Request, username: Annotated[str, Form()], password: Annotated[str, Form()]):
+    if not hmac.compare_digest(username, APP_USERNAME) or not verify_password(password, APP_PASSWORD_HASH):
+        return RedirectResponse("/login?error=1", status_code=303)
+    request.session.clear()
+    request.session.update(authenticated=True, username=username, csrf_token=secrets.token_urlsafe(32))
+    return RedirectResponse("/", status_code=303)
+
+
+@app.post("/logout")
+async def logout(request: Request):
+    request.session.clear()
+    return {"ok": True}
+
+
+@app.get("/api/session")
+def session_info(request: Request):
+    return {"username": request.session.get("username"), "csrf_token": request.session["csrf_token"]}
 
 
 @app.get("/")
@@ -613,4 +698,6 @@ def system_status():
 
 
 if __name__ == "__main__":
-    uvicorn.run("app:app", host=os.getenv("APP_HOST", "127.0.0.1"), port=int(os.getenv("APP_PORT", "8787")), reload=False)
+    uvicorn.run("app:app", host=os.getenv("APP_HOST", "127.0.0.1"),
+                port=int(os.getenv("APP_PORT", "8787")), reload=False,
+                ssl_certfile=TLS_CERTFILE, ssl_keyfile=TLS_KEYFILE)
